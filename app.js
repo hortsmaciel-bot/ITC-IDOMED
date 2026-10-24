@@ -32,6 +32,7 @@ function errMsg(e){
   if(!e) return '';
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
+  if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
   if(/total_alunos/.test(m)) return 'O banco ainda não tem o campo de total de alunos. Rode o script atualizacao-v3.sql no Supabase.';
   if(/cadaver_sessoes|cadaver_anexos|sessao_id|codigo_final|especime|local_atual|uso_inicial|link_drive/.test(m)) return 'O banco ainda não tem a atualização v2. Rode o script atualizacao-v2.sql no Supabase.';
   if(/unidade_id|cadaver_unidades/.test(m)) return 'O banco ainda não tem a estrutura de unidades. Rode o script migracao-unidades.sql no Supabase.';
@@ -202,6 +203,7 @@ async function load(){
   if(e) return {error:e};
   corpos=r1.data||[]; procs=r2.data||[]; aulas=r3.data||[];
   sessoes=r4.error?[]:(r4.data||[]); anexos=r5.error?[]:(r5.data||[]);
+  await signAnexos();
   if(r4.error||r5.error) return {error:r4.error||r5.error};
   return {};
 }
@@ -551,12 +553,11 @@ async function addAnexo(){
     const up=await db.storage.from('anexos').upload(path,f,{contentType:f.type||undefined,upsert:false});
     btn.disabled=false; btn.textContent='Adicionar anexo';
     if(up.error){toast('Erro no envio: '+errMsg(up.error),true);return;}
-    const url=db.storage.from('anexos').getPublicUrl(path).data.publicUrl;
-    Object.assign(row,{tipo:'arquivo',url,arquivo_path:path,tamanho:f.size,mime:f.type||null});
+    Object.assign(row,{tipo:'arquivo',url:'storage://anexos/'+path,arquivo_path:path,tamanho:f.size,mime:f.type||null});
   }
   const {data,error}=await db.from('cadaver_anexos').insert(row).select().single();
   if(error){ if(row.arquivo_path) await db.storage.from('anexos').remove([row.arquivo_path]); toast('Erro: '+errMsg(error),true);return;}
-  anexos.unshift(data); ['ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value=''); el('ax-file').value='';
+  anexos.unshift(data); await signAnexos(); ['ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value=''); el('ax-file').value='';
   renderAnexos(); toast('Anexo adicionado.');
 }
 async function delAnexo(id){
@@ -579,6 +580,15 @@ function ftype(a){
   return ['', (n.split('.').pop()||'ARQ').slice(0,4).toUpperCase()];
 }
 function setAnexoFiltro(c){anexoFiltro=c;renderAnexos();}
+let signed={};
+async function signAnexos(){
+  const paths=anexos.filter(a=>a.arquivo_path&&!signed[a.arquivo_path]).map(a=>a.arquivo_path);
+  if(!paths.length) return;
+  const {data,error}=await db.storage.from('anexos').createSignedUrls(paths,60*60*8);
+  if(error||!data) return;
+  data.forEach(x=>{if(x.signedUrl)signed[x.path]=x.signedUrl;});
+}
+function anexoHref(a){return a.arquivo_path?(signed[a.arquivo_path]||'#'):a.url;}
 function renderAnexos(){
   const cats=CATS.filter(c=>anexos.some(a=>a.categoria===c)).concat(sortPt(anexos.map(a=>a.categoria)).filter(c=>!CATS.includes(c)));
   el('ax-filtros').innerHTML=anexos.length?`<button class="chip ${!anexoFiltro?'on':''}" onclick="setAnexoFiltro('')">Todos <b>${anexos.length}</b></button>`+
@@ -590,7 +600,7 @@ function renderAnexos(){
     return `<div class="axgroup"><h4>${esc(c)} <span>${ls.length}</span></h4><div class="axlist">`+ls.map(a=>{const [cls,lab]=ftype(a);
       return `<div class="ax"><div class="ftype ${cls}">${lab}</div>
         <div><div class="t">${esc(a.titulo)}</div><div class="m">${[a.tipo==='arquivo'?'Arquivo':'Link',fmtFull((a.created_at||'').slice(0,10)),fmtSize(a.tamanho),a.descricao].filter(Boolean).map(esc).join(' · ')}</div></div>
-        <a class="btn ghost sm" href="${esc(a.url)}" target="_blank" rel="noopener">${a.tipo==='arquivo'?'Abrir arquivo':'Abrir link'} ↗</a>
+        <a class="btn ghost sm" href="${esc(anexoHref(a))}" target="_blank" rel="noopener">${a.tipo==='arquivo'?'Abrir arquivo':'Abrir link'} ↗</a>
         <button class="icon del" title="Excluir anexo" onclick="delAnexo('${a.id}')">${TRASH}</button></div>`;}).join('')+'</div></div>';
   }).join('');
 }
@@ -764,4 +774,74 @@ function exportCSV(){
 // redesenha os gráficos quando o tema do sistema muda
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(cur&&el('tab-rel').classList.contains('active'))renderDash();});
 
-bootUnits();
+// ================= LOGIN (Supabase Auth) =================
+let usuario=null, recuperando=false;
+function showView(v){
+  el('view-login').hidden=v!=='login'; el('view-units').hidden=v!=='units'; el('view-unit').hidden=v!=='unit';
+  el('who').hidden=v==='login';
+}
+function loginMsg(id,msg,ok){const b=el(id);b.textContent=msg||'';b.hidden=!msg;b.classList.toggle('ok',!!ok);}
+function showLogin(form){
+  showView('login'); el('lg-boot').hidden=true;
+  el('f-login').hidden=form==='nova'; el('f-nova').hidden=form!=='nova';
+  setTimeout(()=>el(form==='nova'?'ns-s1':'lg-email').focus(),30);
+}
+async function entrar(ev){
+  ev.preventDefault();
+  const email=el('lg-email').value.trim(), password=el('lg-senha').value;
+  if(!email||!password){loginMsg('lg-err','Preencha o e-mail e a senha.');return;}
+  const b=el('lg-btn'); b.disabled=true; b.textContent='Entrando…'; loginMsg('lg-err','');
+  const {data,error}=await db.auth.signInWithPassword({email,password});
+  b.disabled=false; b.textContent='Entrar';
+  if(error){
+    const m=error.message||'';
+    loginMsg('lg-err',/invalid login|invalid credentials/i.test(m)?'E-mail ou senha incorretos.':/email not confirmed/i.test(m)?'Este e-mail ainda não foi confirmado. Peça para a coordenação confirmar o seu acesso.':'Não foi possível entrar: '+m);
+    return;
+  }
+  el('lg-senha').value='';
+  await entrouComo(data.session);
+}
+async function entrouComo(session){
+  usuario=session.user;
+  const nome=(usuario.user_metadata&&(usuario.user_metadata.nome||usuario.user_metadata.name))||'';
+  el('who-mail').textContent=nome||usuario.email;
+  if(!el('ns-resp').value) el('ns-resp').value=nome||'';
+  showView('units'); el('ugrid').innerHTML='<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+  await bootUnits();
+}
+async function sair(){
+  usuario=null;
+  await db.auth.signOut();
+   cur=null; corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];unidades=[];
+  closePeca(); showLogin('login'); loginMsg('lg-err','');
+}
+async function esqueci(){
+  const email=el('lg-email').value.trim();
+  if(!email){loginMsg('lg-err','Digite seu e-mail no campo acima e clique de novo em “Esqueci minha senha”.');el('lg-email').focus();return;}
+  const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  if(error){loginMsg('lg-err','Não foi possível enviar o e-mail: '+error.message);return;}
+  loginMsg('lg-err','Se este e-mail tiver acesso, você vai receber um link para criar uma nova senha.',true);
+}
+async function novaSenha(ev){
+  ev.preventDefault();
+  const a=el('ns-s1').value, b=el('ns-s2').value;
+  if(a.length<8){loginMsg('nv-err','A senha precisa ter pelo menos 8 caracteres.');return;}
+  if(a!==b){loginMsg('nv-err','As duas senhas não são iguais.');return;}
+  const {data,error}=await db.auth.updateUser({password:a});
+  if(error){loginMsg('nv-err','Não foi possível salvar: '+error.message);return;}
+  recuperando=false; el('ns-s1').value=''; el('ns-s2').value='';
+  history.replaceState(null,'',location.pathname);
+  toast('Senha alterada.');
+  const {data:{session}}=await db.auth.getSession();
+  if(session) await entrouComo(session); else showLogin('login');
+}
+db.auth.onAuthStateChange((evt,session)=>{
+  if(evt==='PASSWORD_RECOVERY'){recuperando=true;showLogin('nova');}
+  else if(evt==='SIGNED_OUT'&&usuario){usuario=null;cur=null;closePeca();showLogin('login');loginMsg('lg-err','Sua sessão terminou. Entre novamente.');}
+});
+(async()=>{
+  if(/type=recovery/.test(location.hash)){recuperando=true;}
+  const {data:{session}}=await db.auth.getSession();
+  if(recuperando){showLogin('nova');return;}
+  if(session) await entrouComo(session); else showLogin('login');
+})();

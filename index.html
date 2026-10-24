@@ -23,10 +23,35 @@
     <img class="idomed" src="logo-idomed.png" alt="IDOMED – Instituto de Educação Médica">
   </div>
   <h1>Central de Controle Anatômico <span>– IDOMED</span></h1>
+  <div class="who" id="who" hidden><span id="who-mail"></span><button class="btn ghost sm" onclick="sair()">Sair</button></div>
 </div></header>
 
+<!-- ================= LOGIN ================= -->
+<section id="view-login" class="login wrap">
+  <form class="lcard" id="f-login" onsubmit="entrar(event)" novalidate hidden>
+    <div class="eyebrow">Acesso restrito</div>
+    <h2>Entrar na Central</h2>
+    <p class="lead">Use o e-mail e a senha cadastrados pela coordenação.</p>
+    <div class="field"><label for="lg-email">E-mail</label><input id="lg-email" type="email" autocomplete="username" placeholder="nome@idomed.com.br" required></div>
+    <div class="field"><label for="lg-senha">Senha</label><input id="lg-senha" type="password" autocomplete="current-password" required></div>
+    <div class="lerr" id="lg-err" role="alert" hidden></div>
+    <button class="btn green lbtn" id="lg-btn" type="submit">Entrar</button>
+    <button class="linkbtn" type="button" onclick="esqueci()">Esqueci minha senha</button>
+  </form>
+  <form class="lcard" id="f-nova" onsubmit="novaSenha(event)" hidden novalidate>
+    <div class="eyebrow">Redefinir senha</div>
+    <h2>Crie uma nova senha</h2>
+    <p class="lead">Mínimo de 8 caracteres.</p>
+    <div class="field"><label for="ns-s1">Nova senha</label><input id="ns-s1" type="password" autocomplete="new-password"></div>
+    <div class="field"><label for="ns-s2">Repita a nova senha</label><input id="ns-s2" type="password" autocomplete="new-password"></div>
+    <div class="lerr" id="nv-err" role="alert" hidden></div>
+    <button class="btn green lbtn" type="submit">Salvar nova senha</button>
+  </form>
+  <div class="lboot" id="lg-boot">Verificando acesso…</div>
+</section>
+
 <!-- ================= SELEÇÃO DE UNIDADE ================= -->
-<section id="view-units" class="units wrap">
+<section id="view-units" class="units wrap" hidden>
   <div class="eyebrow">Unidades</div>
   <h2>Qual unidade você vai abrir?</h2>
   <p class="lead">Cada unidade tem seu próprio acervo de peças, aulas, anexos e tipos de aula. Escolha uma para abrir.</p>
