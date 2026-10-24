@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Central de Controle Anatômico – IDOMED</title>
-<meta name="description" content="Controle de corpos, aulas práticas e depreciação das unidades IDOMED.">
+<meta name="description" content="Controle do acervo de peças, aulas práticas, anexos e depreciação das unidades IDOMED.">
 <link rel="icon" type="image/png" href="logo-itc.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,7 +29,7 @@
 <section id="view-units" class="units wrap">
   <div class="eyebrow">Unidades</div>
   <h2>Qual unidade você vai abrir?</h2>
-  <p class="lead">Cada unidade tem seus próprios corpos, tipos de aula e aulas. Escolha uma para ver o painel, a depreciação e os relatórios dela.</p>
+  <p class="lead">Cada unidade tem seu próprio acervo de peças, aulas, anexos e tipos de aula. Escolha uma para abrir.</p>
   <div id="setup" class="setup" hidden></div>
   <div class="ugrid" id="ugrid">
     <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
@@ -47,47 +47,81 @@
       <label class="switch" for="u-switch"><span>Trocar para</span><select id="u-switch" onchange="openUnit(this.value)"></select></label>
     </div>
     <nav class="tabs" aria-label="Seções da unidade">
-      <button class="active" data-tab="dash">Painel</button>
-      <button data-tab="prem">Depreciação</button>
+      <button class="active" data-tab="pecas">Peças</button>
       <button data-tab="aulas">Aulas</button>
+      <button data-tab="anexos">Anexos</button>
+      <button data-tab="prem">Depreciação</button>
       <button data-tab="rel">Relatórios</button>
     </nav>
   </div></div>
 
   <main class="wrap">
 
-    <!-- PAINEL -->
-    <section class="tab active" id="tab-dash">
-      <div class="kpis" id="kpis"></div>
-      <div class="grid2">
-        <div class="panel"><h4>Custo por aula ao longo do tempo</h4><div class="cap">Cada barra é uma aula lançada, pela data.</div><div class="chart-box"><canvas id="c-time"></canvas></div></div>
-        <div class="panel"><h4>Custo depreciado por corpo</h4><div class="cap">Quanto do valor de cada corpo já virou custo de aula.</div><div class="chart-box"><canvas id="c-corpo"></canvas></div></div>
-        <div class="panel"><h4>Custo por mês</h4><div class="cap">Soma do custo das aulas em cada mês.</div><div class="chart-box"><canvas id="c-mes"></canvas></div></div>
-        <div class="panel"><h4>Custo por tipo de aula</h4><div class="cap">Soma do custo das aulas por tipo.</div><div class="chart-box"><canvas id="c-proc"></canvas></div></div>
+    <!-- PEÇAS -->
+    <section class="tab active" id="tab-pecas">
+      <div class="shead">
+        <div><h3>Peças do acervo</h3><p>Cada peça da unidade com a ficha completa, o desgaste acumulado nas aulas e o link da pasta no Drive.</p></div>
+        <div class="acts-row">
+          <input id="pc-busca" type="search" placeholder="Buscar código, espécimen, local…" oninput="renderPecas()" aria-label="Buscar peça">
+          <button class="btn green" onclick="openPeca(null)">+ Nova peça</button>
+        </div>
       </div>
-      <div class="panel mt"><h4>Desgaste de cada corpo</h4><div class="cap">Percentual do valor já consumido pelas aulas. O teto é 100%.</div><div id="deprec-list"></div></div>
+      <div class="chips" id="pc-resumo"></div>
+      <div class="tablewrap" id="w-pecas"></div>
+    </section>
+
+    <!-- AULAS -->
+    <section class="tab" id="tab-aulas">
+      <div class="shead"><div><h3>Aulas</h3><p>Registre cada dia de aula com as peças usadas. A depreciação de cada peça é o percentual do tipo de aula × nº de alunos que trabalharam nela.</p></div></div>
+
+      <div class="formcard daycard">
+        <h4 class="fc-title">Registrar dia de aula</h4>
+        <div class="frow">
+          <div class="field"><label for="ns-data">Data</label><input id="ns-data" type="date"></div>
+          <div class="field"><label for="ns-curso">Curso ou turma</label><input id="ns-curso" list="dl-curso" placeholder="ex.: MFT, IOA Goiânia"></div>
+          <div class="field"><label for="ns-resp">Responsável pelo registro</label><input id="ns-resp" list="dl-resp" placeholder="nome do funcionário"></div>
+          <div class="field"><label for="ns-obs">Observações</label><input id="ns-obs" placeholder="opcional"></div>
+        </div>
+        <div class="lines-h"><span>Peças usadas nesta aula</span></div>
+        <div id="ns-lines"></div>
+        <div class="lines-foot">
+          <button class="btn ghost sm" onclick="addLine()">+ Adicionar outra peça</button>
+          <div class="lines-total" id="ns-total"></div>
+          <button class="btn green" onclick="saveDia()">Salvar dia de aula</button>
+        </div>
+      </div>
+
+      <div id="w-aulas"></div>
+      <p class="foothint">Custo de cada peça = valor da peça × depreciação. Quando a peça chega a 100%, os usos seguintes não geram custo e aparecem marcados como esgotado.</p>
+    </section>
+
+    <!-- ANEXOS -->
+    <section class="tab" id="tab-anexos">
+      <div class="shead"><div><h3>Anexos</h3><p>Planos de aula, documentos da unidade, notas fiscais e outros arquivos ou links ligados a esta unidade.</p></div></div>
+      <div class="formcard">
+        <div class="seg" role="tablist" aria-label="Tipo de anexo">
+          <button role="tab" class="on" id="ax-m-link" onclick="setAnexoMode('link')">Link</button>
+          <button role="tab" id="ax-m-arq" onclick="setAnexoMode('arquivo')">Arquivo do computador</button>
+        </div>
+        <div class="frow">
+          <div class="field"><label for="ax-titulo">Título</label><input id="ax-titulo" placeholder="ex.: Plano de aula – Anatomia do tórax"></div>
+          <div class="field"><label for="ax-cat">Categoria</label><select id="ax-cat"></select></div>
+          <div class="field" id="ax-f-link"><label for="ax-url">Endereço do link</label><input id="ax-url" type="url" placeholder="https://drive.google.com/…"></div>
+          <div class="field" id="ax-f-arq" hidden><label for="ax-file">Arquivo (até 50 MB)</label><input id="ax-file" type="file"></div>
+          <div class="field"><label for="ax-desc">Descrição</label><input id="ax-desc" placeholder="opcional"></div>
+          <div class="field"><button class="btn green" id="ax-btn" onclick="addAnexo()">Adicionar anexo</button></div>
+        </div>
+      </div>
+      <div class="chips" id="ax-filtros"></div>
+      <div id="w-anexos"></div>
     </section>
 
     <!-- DEPRECIAÇÃO -->
     <section class="tab" id="tab-prem">
-      <div class="shead"><div><h3>Depreciação</h3><p>Os números que alimentam todo o cálculo desta unidade: o valor de cada corpo e o percentual de depreciação de cada tipo de aula. Mudou um número, todos os custos recalculam.</p></div></div>
-
-      <div class="block">
-        <h3>Corpos</h3>
-        <p>Cadastre cada corpo com o valor investido. O desgaste dele é a soma dos percentuais consumidos nas aulas.</p>
-        <div class="formcard"><div class="frow">
-          <div class="field"><label for="nc-nome">Identificação</label><input id="nc-nome" placeholder="ex.: Corpo 07, masculino"></div>
-          <div class="field"><label for="nc-valor">Valor investido (R$)</label><input id="nc-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>
-          <div class="field"><label for="nc-data">Aquisição</label><input id="nc-data" type="date"></div>
-          <div class="field"><label for="nc-forn">Fornecedor</label><input id="nc-forn" placeholder="ex.: MasterDoctors"></div>
-          <div class="field"><button class="btn green" onclick="addCorpo()">Adicionar corpo</button></div>
-        </div></div>
-        <div class="tablewrap" id="w-corpos"></div>
-      </div>
-
+      <div class="shead"><div><h3>Depreciação</h3><p>O percentual de depreciação por aluno de cada tipo de aula. Mudou um número, todos os custos recalculam.</p></div></div>
       <div class="block">
         <h3>Tipos de aula</h3>
-        <p>Cada tipo de aula tem um percentual de depreciação por aluno. Uma aula com 10 alunos de um tipo que deprecia 0,5% por aluno consome 5% do valor do corpo.</p>
+        <p>Uma peça usada por 10 alunos num tipo de aula que deprecia 0,5% por aluno perde 5% do seu valor.</p>
         <div class="formcard"><div class="frow">
           <div class="field"><label for="np-nome">Nome do tipo de aula</label><input id="np-nome" placeholder="ex.: Acesso venoso central"></div>
           <div class="field"><label for="np-pct">Depreciação por aluno (%)</label><input id="np-pct" type="number" min="0" step="0.01" placeholder="ex.: 0,5"></div>
@@ -95,44 +129,40 @@
           <div class="field"><button class="btn green" onclick="addProc()">Adicionar tipo</button></div>
         </div></div>
         <div class="tablewrap" id="w-procs"></div>
-        <p class="foothint">Alunos até esgotar = 100 ÷ percentual por aluno: quantos alunos, só nesse tipo de aula, o corpo aguentaria.</p>
+        <p class="foothint">Alunos até esgotar = 100 ÷ percentual por aluno: quantos alunos, só nesse tipo de aula, uma peça nova aguentaria.</p>
       </div>
-
       <div class="block">
         <h3>Simulador</h3>
-        <p>Teste as premissas antes de lançar: escolha um corpo, um tipo de aula e o número de alunos.</p>
+        <p>Teste antes de lançar: escolha uma peça, um tipo de aula e o número de alunos.</p>
         <div class="formcard"><div class="sim">
-          <div class="field"><label for="sim-corpo">Corpo</label><select id="sim-corpo" onchange="renderSim()"></select></div>
+          <div class="field"><label for="sim-corpo">Peça</label><select id="sim-corpo" onchange="renderSim()"></select></div>
           <div class="field"><label for="sim-proc">Tipo de aula</label><select id="sim-proc" onchange="renderSim()"></select></div>
           <div class="field"><label for="sim-alunos">Nº de alunos</label><input id="sim-alunos" type="number" min="1" step="1" value="10" oninput="renderSim()"></div>
-          <div class="out" id="sim-out"><b>—</b><span>escolha corpo, tipo e alunos</span></div>
+          <div class="out" id="sim-out"><b>—</b><span>escolha peça, tipo e alunos</span></div>
         </div></div>
       </div>
     </section>
 
-    <!-- AULAS -->
-    <section class="tab" id="tab-aulas">
-      <div class="shead"><div><h3>Aulas</h3><p>Lance cada aula prática: corpo, tipo de aula e número de alunos. O percentual e o custo vêm da aba Depreciação.</p></div></div>
-      <div class="formcard"><div class="frow">
-        <div class="field"><label for="na-corpo">Corpo</label><select id="na-corpo"></select></div>
-        <div class="field"><label for="na-data">Data</label><input id="na-data" type="date"></div>
-        <div class="field"><label for="na-proc">Tipo de aula</label><select id="na-proc"></select></div>
-        <div class="field"><label for="na-alunos">Nº de alunos</label><input id="na-alunos" type="number" min="1" step="1" value="1"></div>
-        <div class="field"><label for="na-obs">Observação</label><input id="na-obs" placeholder="opcional"></div>
-        <div class="field"><button class="btn green" onclick="addAula()">Lançar aula</button></div>
-      </div></div>
-      <div class="tablewrap" id="w-aulas"></div>
-      <p class="foothint">Depreciação da aula = percentual do tipo × nº de alunos. Custo da aula = valor do corpo × depreciação. Quando o corpo chega a 100%, as aulas seguintes não geram custo adicional e aparecem marcadas como esgotado.</p>
-    </section>
-
     <!-- RELATÓRIOS -->
     <section class="tab" id="tab-rel">
-      <div class="shead"><div><h3>Relatórios</h3><p>Filtre as aulas desta unidade e exporte para planilha. Cada linha traz o custo da aula e o custo por aluno.</p></div>
-        <div style="display:flex;gap:8px"><button class="btn ghost" onclick="exportCSV()">Exportar CSV</button><button class="btn ghost" onclick="window.print()">Imprimir</button></div>
+      <div class="shead"><div><h3>Relatórios</h3><p>Visão geral da unidade e o detalhamento dos usos de peças, com exportação para planilha.</p></div></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="panel"><h4>Custo por dia de aula</h4><div class="cap">Soma do custo das peças usadas em cada dia.</div><div class="chart-box"><canvas id="c-time"></canvas></div></div>
+        <div class="panel"><h4>Custo depreciado por peça</h4><div class="cap">Quanto do valor de cada peça já virou custo de aula.</div><div class="chart-box"><canvas id="c-corpo"></canvas></div></div>
+        <div class="panel"><h4>Custo por mês</h4><div class="cap">Soma do custo das aulas em cada mês.</div><div class="chart-box"><canvas id="c-mes"></canvas></div></div>
+        <div class="panel"><h4>Custo por tipo de aula</h4><div class="cap">Soma do custo por tipo de aula.</div><div class="chart-box"><canvas id="c-proc"></canvas></div></div>
+      </div>
+      <div class="panel mt"><h4>Desgaste de cada peça</h4><div class="cap">Percentual do valor já consumido, incluindo o uso prévio. O teto é 100%.</div><div id="deprec-list"></div></div>
+
+      <div class="shead rel-h">
+        <div><h3>Usos de peças</h3><p>Filtre e exporte. Cada linha é uma peça usada num dia de aula.</p></div>
+        <div class="acts-row"><button class="btn ghost" onclick="exportCSV()">Exportar CSV</button><button class="btn ghost" onclick="window.print()">Imprimir</button></div>
       </div>
       <div class="toolbar">
-        <div class="field"><label for="f-corpo">Corpo</label><select id="f-corpo" onchange="renderRel()"></select></div>
+        <div class="field"><label for="f-corpo">Peça</label><select id="f-corpo" onchange="renderRel()"></select></div>
         <div class="field"><label for="f-proc">Tipo de aula</label><select id="f-proc" onchange="renderRel()"></select></div>
+        <div class="field"><label for="f-resp">Responsável</label><select id="f-resp" onchange="renderRel()"></select></div>
         <div class="field"><label for="f-de">De</label><input id="f-de" type="date" onchange="renderRel()"></div>
         <div class="field"><label for="f-ate">Até</label><input id="f-ate" type="date" onchange="renderRel()"></div>
         <div class="field"><button class="btn ghost sm" onclick="clearFilters()">Limpar filtros</button></div>
@@ -143,8 +173,44 @@
   </main>
 </div>
 
+<!-- ficha da peça -->
+<div id="pmodal" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+    <div class="sheet-h">
+      <div class="sheet-id">
+        <h2 id="pf-title">Nova peça</h2>
+        <div class="tags" id="pf-tags"></div>
+      </div>
+      <div class="ring-wrap" id="pf-ringwrap"><div class="ring ok" id="pf-ring" style="--p:0"><span id="pf-ringv">0%</span></div><small>Σ uso</small></div>
+      <button class="icon close" onclick="closePeca()" aria-label="Fechar">✕</button>
+    </div>
+    <div class="sec-t">Cadastro</div>
+    <div class="pgrid" id="pf-grid"></div>
+    <div class="sec-t">Links</div>
+    <div class="linkbox">
+      <div class="field"><label for="pf-link_drive">Pasta ou arquivo no Drive com os registros da peça</label>
+        <div class="row"><input id="pf-link_drive" type="url" placeholder="https://drive.google.com/drive/folders/…"><a id="pf-drive-open" class="btn ghost sm" target="_blank" rel="noopener" hidden>Abrir no Drive ↗</a></div>
+      </div>
+    </div>
+    <div id="pf-hist-wrap">
+      <div class="sec-t">Histórico de uso</div>
+      <div class="tablewrap" id="pf-hist"></div>
+    </div>
+    <div class="sheet-f">
+      <button class="btn ghost danger-t" id="pf-del" onclick="delCorpo(curPeca)">Excluir peça</button>
+      <span class="grow"></span>
+      <button class="btn ghost" onclick="closePeca()">Cancelar</button>
+      <button class="btn green" onclick="savePeca()">Salvar peça</button>
+    </div>
+  </div>
+</div>
+
+<!-- listas de sugestões -->
+<datalist id="dl-especime"></datalist><datalist id="dl-local"></datalist><datalist id="dl-proc"></datalist>
+<datalist id="dl-forn"></datalist><datalist id="dl-etnia"></datalist><datalist id="dl-resp"></datalist><datalist id="dl-curso"></datalist>
+
 <!-- confirmação -->
-<div id="modal" class="modal" hidden>
+<div id="modal" class="modal top" hidden>
   <div class="mcard" role="dialog" aria-modal="true" aria-labelledby="m-title">
     <h3 id="m-title"></h3>
     <p id="m-body"></p>
