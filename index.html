@@ -72,7 +72,7 @@
 
     <!-- AULAS -->
     <section class="tab" id="tab-aulas">
-      <div class="shead"><div><h3>Aulas</h3><p>Registre cada dia de aula com as peças usadas. A depreciação de cada peça é o percentual do tipo de aula × nº de alunos que trabalharam nela.</p></div></div>
+      <div class="shead"><div><h3>Aulas</h3><p>Registre cada dia de aula com as peças usadas. Informe o total de alunos da aula e, em cada peça, quantos trabalharam nela: a depreciação é o percentual do tipo de aula × alunos na peça.</p></div></div>
 
       <div class="formcard daycard">
         <h4 class="fc-title">Registrar dia de aula</h4>
@@ -80,6 +80,7 @@
           <div class="field"><label for="ns-data">Data</label><input id="ns-data" type="date"></div>
           <div class="field"><label for="ns-curso">Curso ou turma</label><input id="ns-curso" list="dl-curso" placeholder="ex.: MFT, IOA Goiânia"></div>
           <div class="field"><label for="ns-resp">Responsável pelo registro</label><input id="ns-resp" list="dl-resp" placeholder="nome do funcionário"></div>
+          <div class="field"><label for="ns-alunos">Alunos na aula</label><input id="ns-alunos" type="number" min="1" step="1" placeholder="total de alunos"></div>
           <div class="field"><label for="ns-obs">Observações</label><input id="ns-obs" placeholder="opcional"></div>
         </div>
         <div class="lines-h"><span>Peças usadas nesta aula</span></div>

@@ -32,6 +32,7 @@ function errMsg(e){
   if(!e) return '';
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
+  if(/total_alunos/.test(m)) return 'O banco ainda não tem o campo de total de alunos. Rode o script atualizacao-v3.sql no Supabase.';
   if(/cadaver_sessoes|cadaver_anexos|sessao_id|codigo_final|especime|local_atual|uso_inicial|link_drive/.test(m)) return 'O banco ainda não tem a atualização v2. Rode o script atualizacao-v2.sql no Supabase.';
   if(/unidade_id|cadaver_unidades/.test(m)) return 'O banco ainda não tem a estrutura de unidades. Rode o script migracao-unidades.sql no Supabase.';
   if(/bucket/i.test(m)) return 'A pasta de anexos não existe no Supabase. Rode o script atualizacao-v2.sql.';
@@ -136,7 +137,7 @@ async function openUnit(id){
   el('u-name').textContent=u.nome;
   document.title=u.nome+' · Central de Controle Anatômico';
   el('u-switch').innerHTML=unidades.map(x=>`<option value="${x.id}" ${x.id===id?'selected':''}>${esc(x.nome)}</option>`).join('');
-  ['f-de','f-ate','np-nome','np-pct','np-desc','pc-busca','ns-curso','ns-obs','ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value='');
+  ['f-de','f-ate','np-nome','np-pct','np-desc','pc-busca','ns-curso','ns-obs','ns-alunos','ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value='');
   el('ns-data').value=today(); el('ax-file').value=''; anexoFiltro='';
   lines=[newLine()];
   showTab('pecas');
@@ -391,17 +392,21 @@ async function saveDia(){
   const data=el('ns-data').value, responsavel=el('ns-resp').value.trim();
   if(!data){toast('Informe a data da aula.',true);return;}
   if(!responsavel){toast('Informe o nome de quem está registrando a aula.',true);el('ns-resp').focus();return;}
+  const total_alunos=parseInt(el('ns-alunos').value||0);
+  if(!(total_alunos>0)){toast('Informe quantos alunos participaram da aula.',true);el('ns-alunos').focus();return;}
   const ok=lines.filter(l=>l.corpo||l.proc||l.alunos);
   if(!ok.length){toast('Adicione pelo menos uma peça usada na aula.',true);return;}
   const bad=ok.findIndex(l=>!(l.corpo&&l.proc&&Number(l.alunos)>0));
   if(bad>=0){toast(`Complete a peça ${lines.indexOf(ok[bad])+1}: peça, tipo de aula e nº de alunos.`,true);return;}
-  const {data:s,error}=await db.from('cadaver_sessoes').insert({unidade_id:cur.id,data,curso:el('ns-curso').value.trim()||null,responsavel,observacao:el('ns-obs').value.trim()||null}).select().single();
+  const acima=ok.findIndex(l=>Number(l.alunos)>total_alunos);
+  if(acima>=0){toast(`A peça ${lines.indexOf(ok[acima])+1} tem mais alunos que o total da aula (${total_alunos}).`,true);return;}
+  const {data:s,error}=await db.from('cadaver_sessoes').insert({unidade_id:cur.id,data,curso:el('ns-curso').value.trim()||null,responsavel,total_alunos,observacao:el('ns-obs').value.trim()||null}).select().single();
   if(error){toast('Erro: '+errMsg(error),true);return;}
   const rows=ok.map(l=>aulaRow(s,l.corpo,l.proc,parseInt(l.alunos)));
   const r=await db.from('cadaver_aulas').insert(rows).select();
   if(r.error){await db.from('cadaver_sessoes').delete().eq('id',s.id);toast('Erro: '+errMsg(r.error),true);return;}
   sessoes.unshift(s); aulas.push(...r.data);
-  lines=[newLine()]; el('ns-curso').value=''; el('ns-obs').value='';
+  lines=[newLine()]; el('ns-curso').value=''; el('ns-obs').value=''; el('ns-alunos').value='';
   renderAll(); toast('Dia de aula salvo com '+r.data.length+' peça(s).');
 }
 function aulaRow(s,corpo_id,procedimento_id,alunos){
@@ -431,9 +436,10 @@ function sessCard(s,ls){
       <div class="sess-meta">
         <div class="field"><label>Curso ou turma</label><input list="dl-curso" value="${esc(s.curso||'')}" onchange="saveSess('${s.id}','curso',this.value)"></div>
         <div class="field"><label>Responsável</label><input list="dl-resp" value="${esc(s.responsavel||'')}" onchange="saveSess('${s.id}','responsavel',this.value)"></div>
+        <div class="field"><label>Alunos na aula</label><input type="number" min="1" step="1" value="${s.total_alunos??''}" placeholder="—" onchange="saveSess('${s.id}','total_alunos',this.value)"></div>
         <div class="field"><label>Observações</label><input value="${esc(s.observacao||'')}" onchange="saveSess('${s.id}','observacao',this.value)"></div>
       </div>
-      <div class="sess-sum"><b>${money(tot)}</b><span>${ls.length} peça(s) · até ${al} aluno(s)</span><button class="icon" title="Excluir dia de aula" onclick="delSess('${s.id}')">${TRASH}</button></div>
+      <div class="sess-sum"><b>${money(tot)}</b><span>${s.total_alunos?`<b class="al">${s.total_alunos}</b> aluno(s) · `:''}${ls.length} peça(s)</span><button class="icon" title="Excluir dia de aula" onclick="delSess('${s.id}')">${TRASH}</button></div>
     </div>
     ${ls.length?linesTable(ls):'<div class="empty">Nenhuma peça neste dia.</div>'}
     <div class="sess-add">
@@ -447,7 +453,7 @@ function sessCard(s,ls){
 function linesTable(ls){
   const corpoOpts=sel=>corpos.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.nome)}</option>`).join('');
   const procOpts=sel=>'<option value="">sem tipo</option>'+procs.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.nome)}</option>`).join('');
-  return '<div class="tablewrap"><table><thead><tr><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th><th></th></tr></thead><tbody>'+
+  return '<div class="tablewrap"><table><thead><tr><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos na peça</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th><th></th></tr></thead><tbody>'+
     ls.map(a=>`<tr>
       <td><select aria-label="Peça" onchange="saveAula('${a.id}','corpo_id',this.value)">${corpoOpts(a.corpo_id)}</select></td>
       <td><select aria-label="Tipo de aula" onchange="saveAula('${a.id}','procedimento_id',this.value)">${procOpts(a.procedimento_id)}</select></td>
@@ -466,7 +472,8 @@ function depCell(a){
 }
 async function saveSess(id,field,val){
   const s=sessById(id); if(!s)return;
-  val=(val||'').trim()||null;
+  val=(val??'').toString().trim()||null;
+  if(field==='total_alunos'){val=parseInt(val||0);if(!(val>0)){toast('Informe um número de alunos maior que zero.',true);renderAulas();return;}}
   if(field==='data'&&!val){toast('A data não pode ficar vazia.',true);renderAulas();return;}
   if(field==='responsavel'&&!val){toast('O responsável não pode ficar vazio.',true);renderAulas();return;}
   const {error}=await db.from('cadaver_sessoes').update({[field]:val}).eq('id',id);
@@ -673,7 +680,7 @@ function baseBar(labels,data,color,horizontal){
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(horizontal?c.parsed.x:c.parsed.y)}}},
       scales:horizontal?{x:val,y:cat}:{y:val,x:cat}}};
 }
-function alunosDia(ls){return ls.reduce((t,a)=>Math.max(t,Number(a.num_alunos||0)),0);}
+function alunosDia(ls,s){return (s&&Number(s.total_alunos)>0)?Number(s.total_alunos):ls.reduce((t,a)=>Math.max(t,Number(a.num_alunos||0)),0);}
 function renderDash(){
   if(!cur) return;
   Chart.defaults.font.family=cssv('--f-body'); Chart.defaults.color=cssv('--muted');
@@ -681,14 +688,14 @@ function renderDash(){
   const totCusto=aulas.reduce((s,a)=>s+custoAula(a),0);
   const totResid=corpos.reduce((s,c)=>s+residualCorpo(c),0);
   const dias=sessoes.filter(s=>aulas.some(a=>a.sessao_id===s.id));
-  const totAlunos=dias.reduce((t,s)=>t+alunosDia(aulas.filter(a=>a.sessao_id===s.id)),0);
+  const totAlunos=dias.reduce((t,s)=>t+alunosDia(aulas.filter(a=>a.sessao_id===s.id),s),0);
   el('kpis').innerHTML=
     kpi('Valor do acervo',money(totInvest),'lead')+
     kpi('Custo depreciado nas aulas',money(totCusto),'warn')+
     kpi('Valor residual',money(totResid),'accent')+
     kpi('Peças no acervo',corpos.length,'')+
     kpi('Dias de aula',dias.length,'')+
-    kpi('Usos de peças',aulas.length,'')+
+    kpi('Alunos atendidos',NUM.format(totAlunos),'')+
     kpi('Custo médio por dia de aula',money(dias.length?totCusto/dias.length:0),'small')+
     kpi('Custo médio por aluno',money(totAlunos?totCusto/totAlunos:0),'small');
   const G=cssv('--chart-1'), T=cssv('--chart-2');
@@ -731,21 +738,21 @@ function renderRel(){
   const rows=filtered();
   const tot=rows.reduce((s,a)=>s+custoAula(a),0);
   const ds=new Set(rows.map(a=>a.sessao_id));
-  el('rel-kpis').innerHTML=kpi('Usos no filtro',rows.length,'')+kpi('Dias de aula',ds.size,'')+kpi('Custo total',money(tot),'warn')+kpi('Peças diferentes',new Set(rows.map(a=>a.corpo_id)).size,'');
+  el('rel-kpis').innerHTML=kpi('Usos no filtro',rows.length,'')+kpi('Dias de aula',ds.size,'')+kpi('Custo total',money(tot),'warn')+kpi('Alunos atendidos',NUM.format([...ds].reduce((t,id)=>t+alunosDia(aulas.filter(a=>a.sessao_id===id),sessById(id)),0)),'');
   const w=el('w-rel');
   if(!rows.length){w.innerHTML='<div class="empty"><b>Nenhum uso no filtro</b>Ajuste ou limpe os filtros acima.</div>';return;}
-  let h='<table><thead><tr><th>Data</th><th>Curso</th><th>Responsável</th><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos</th><th class="n">% por aluno</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th>Data</th><th>Curso</th><th>Responsável</th><th class="n">Alunos na aula</th><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos na peça</th><th class="n">% por aluno</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th></tr></thead><tbody>';
   rows.forEach(a=>{const c=corpoById(a.corpo_id)||{},p=procById(a.procedimento_id),s=sessById(a.sessao_id)||{};
-    h+=`<tr><td>${fmtFull(a.data)}</td><td>${esc(s.curso||'—')}</td><td>${esc(s.responsavel||'—')}</td><td>${esc(c.nome||'—')}</td><td>${esc(p?p.nome:'sem tipo')}</td><td class="n">${a.num_alunos}</td><td class="n">${pct(pctAluno(a))}</td><td class="n">${pct(depAula(a))}</td><td class="n calc">${money(custoAula(a))}</td><td class="n">${money(custoAluno(a))}</td></tr>`;});
+    h+=`<tr><td>${fmtFull(a.data)}</td><td>${esc(s.curso||'—')}</td><td>${esc(s.responsavel||'—')}</td><td class="n">${s.total_alunos??'—'}</td><td>${esc(c.nome||'—')}</td><td>${esc(p?p.nome:'sem tipo')}</td><td class="n">${a.num_alunos}</td><td class="n">${pct(pctAluno(a))}</td><td class="n">${pct(depAula(a))}</td><td class="n calc">${money(custoAula(a))}</td><td class="n">${money(custoAluno(a))}</td></tr>`;});
   w.innerHTML=h+'</tbody></table>';
 }
 function exportCSV(){
   const rows=filtered();
-  const head=['Unidade','Data','Curso','Responsável','Código da peça','Espécimen','Valor da peça','Tipo de aula','Alunos','% por aluno','Depreciação (%)','Custo','Custo por aluno','Observações do dia'];
+  const head=['Unidade','Data','Curso','Responsável','Alunos na aula','Código da peça','Espécimen','Valor da peça','Tipo de aula','Alunos na peça','% por aluno','Depreciação (%)','Custo','Custo por aluno','Observações do dia'];
   const dec=v=>Number(v).toFixed(2).replace('.',',');
   const lines=[head.join(';')];
   rows.forEach(a=>{const c=corpoById(a.corpo_id)||{},p=procById(a.procedimento_id),s=sessById(a.sessao_id)||{};
-    lines.push([cur.nome,fmtFull(a.data),s.curso||'',s.responsavel||'',c.nome||'',c.especime||'',dec(c.valor||0),p?p.nome:'',a.num_alunos,dec(pctAluno(a)),dec(depAula(a)),
+    lines.push([cur.nome,fmtFull(a.data),s.curso||'',s.responsavel||'',s.total_alunos??'',c.nome||'',c.especime||'',dec(c.valor||0),p?p.nome:'',a.num_alunos,dec(pctAluno(a)),dec(depAula(a)),
       dec(custoAula(a)),dec(custoAluno(a)),s.observacao||''].map(x=>`"${(x??'').toString().replace(/"/g,'""')}"`).join(';'));
   });
   const blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
