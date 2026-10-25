@@ -1,6 +1,23 @@
 // Central de Controle Anatômico – IDOMED · v2
 // SUPABASE_URL e SUPABASE_KEY vêm de config.js
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Indicador de salvamento: acompanha cada gravação enviada ao Supabase
+let syncPend=0, syncErr=false, syncLast=null;
+function syncShow(){
+  const b=el('sync'); if(!b) return;
+  const t=syncPend?'Salvando na nuvem…':syncErr?'Erro ao salvar — confira a conexão':syncLast?'Tudo salvo na nuvem · '+syncLast.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'Conectado à nuvem';
+  b.className='sync'+(syncPend?' busy':syncErr?' err':''); el('sync-t').textContent=t;
+}
+async function trackFetch(input,init){
+  const url=typeof input==='string'?input:input.url, method=((init&&init.method)||(input&&input.method)||'GET').toUpperCase();
+  const write=method!=='GET'&&method!=='HEAD'&&!/\/auth\/v1\//.test(url)&&!/\/object\/sign\//.test(url);
+  if(!write) return fetch(input,init);
+  syncPend++; syncShow();
+  try{ const r=await fetch(input,init); syncErr=!r.ok; if(r.ok) syncLast=new Date(); return r; }
+  catch(e){ syncErr=true; throw e; }
+  finally{ syncPend--; syncShow(); }
+}
+window.addEventListener('beforeunload',e=>{if(syncPend>0){e.preventDefault();e.returnValue='';}});
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {global:{fetch:trackFetch}});
 
 const BRL = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const NUM = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
@@ -10,6 +27,9 @@ const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt
 const today = () => new Date().toLocaleDateString('sv');
 const el = id => document.getElementById(id);
 const TRASH = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const cod = c => c? ((c.codigo_final||'').trim()||c.nome||'—') : '—';   // identificador principal = código final
+const semFinal = c => c && !(c.codigo_final||'').trim();
+const byCod = (a,b) => cod(a).localeCompare(cod(b),'pt-BR',{numeric:true});
 const sortPt = arr => [...new Set(arr.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
 
 let unidades=[], resumo={}, cur=null;
@@ -33,6 +53,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
   if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
   if(/total_alunos/.test(m)) return 'O banco ainda não tem o campo de total de alunos. Rode o script atualizacao-v3.sql no Supabase.';
   if(/cadaver_sessoes|cadaver_anexos|sessao_id|codigo_final|especime|local_atual|uso_inicial|link_drive/.test(m)) return 'O banco ainda não tem a atualização v2. Rode o script atualizacao-v2.sql no Supabase.';
@@ -154,6 +175,7 @@ function showTab(t){
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id==='tab-'+t));
   if(t==='rel'){ renderDash(); renderRel(); }
+  if(t==='hist') loadHist();
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
@@ -225,8 +247,8 @@ function fillLists(){
   put('dl-curso',sessoes.map(s=>s.curso));
 }
 function fillSelects(){
-  const nomeP=c=>esc(c.nome)+(c.especime?' · '+esc(c.especime):'');
-  const optC=corpos.map(c=>`<option value="${c.id}">${nomeP(c)}</option>`).join('');
+  const nomeP=c=>esc(cod(c))+(semFinal(c)?' (sem cód. final)':'')+(c.especime?' · '+esc(c.especime):'');
+  const optC=[...corpos].sort(byCod).map(c=>`<option value="${c.id}">${nomeP(c)}</option>`).join('');
   const optP=procs.map(p=>`<option value="${p.id}">${esc(p.nome)} (${pct(p.pct_por_aluno)}/aluno)</option>`).join('');
   const optR=sortPt(sessoes.map(s=>s.responsavel)).map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
   const keep=(id,html,first)=>{const s=el(id),v=s.value;s.innerHTML=first+html;if([...s.options].some(o=>o.value===v))s.value=v;};
@@ -239,8 +261,8 @@ function fillSelects(){
 
 // ================= PEÇAS =================
 const PF=[
+  {k:'codigo_final',l:'Código final (identificador)',main:1},
   {k:'nome',l:'Código original',req:1},
-  {k:'codigo_final',l:'Código final'},
   {k:'especime',l:'Espécimen',list:'dl-especime'},
   {k:'local_atual',l:'Local atual',list:'dl-local'},
   {k:'processamento',l:'Processamento',list:'dl-proc'},
@@ -258,7 +280,7 @@ const PF=[
 ];
 function renderPecas(){
   const q=(el('pc-busca').value||'').trim().toLowerCase();
-  const list=corpos.filter(c=>!q||[c.nome,c.codigo_final,c.especime,c.local_atual,c.processamento,c.fornecedor,c.invoice].some(v=>(v||'').toLowerCase().includes(q)));
+  const list=[...corpos].sort(byCod).filter(c=>!q||[c.nome,c.codigo_final,c.especime,c.local_atual,c.processamento,c.fornecedor,c.invoice].some(v=>(v||'').toLowerCase().includes(q)));
   const tot=corpos.reduce((s,c)=>s+Number(c.valor||0),0);
   const esg=corpos.filter(c=>pctDoCorpo(c.id)>=100).length;
   el('pc-resumo').innerHTML=corpos.length?`<span class="chip"><b>${corpos.length}</b> peças</span><span class="chip"><b>${money(tot)}</b> em acervo</span><span class="chip"><b>${money(corpos.reduce((s,c)=>s+residualCorpo(c),0))}</b> de valor residual</span>${esg?`<span class="chip"><b>${esg}</b> esgotada(s)</span>`:''}`:'';
@@ -269,7 +291,7 @@ function renderPecas(){
   list.forEach(c=>{
     const p=pctDoCorpo(c.id), lv=nivel(p);
     h+=`<tr class="click" onclick="openPeca('${c.id}')" tabindex="0" onkeydown="if(event.key==='Enter')openPeca('${c.id}')">
-      <td><span class="code">${esc(c.nome)}</span>${c.codigo_final?`<span class="sub">final: ${esc(c.codigo_final)}</span>`:''}</td>
+      <td><span class="code">${esc(cod(c))}</span>${semFinal(c)?'<span class="sub warn-t">sem código final</span>':`<span class="sub">original: ${esc(c.nome)}</span>`}</td>
       <td>${esc(c.especime||'—')}</td>
       <td>${esc(c.processamento||'—')}</td>
       <td>${esc(c.local_atual||'—')}</td>
@@ -292,22 +314,23 @@ function openPeca(id){
     let inp;
     if(f.opts) inp=`<select id="pf-${f.k}">${f.opts.map(([val,lab])=>`<option value="${val}" ${String(v)===val?'selected':''}>${lab}</option>`).join('')}</select>`;
     else inp=`<input id="pf-${f.k}" type="${f.type||'text'}" ${f.step?`step="${f.step}" min="0"`:''} ${f.list?`list="${f.list}"`:''} value="${esc(v)}" placeholder="${esc(f.ph||'')}">`;
-    return `<div class="field ${f.req?'req':''}"><label for="pf-${f.k}">${f.l}</label>${inp}</div>`;
+    return `<div class="field ${f.req?'req':''} ${f.main?'main':''}"><label for="pf-${f.k}">${f.l}</label>${inp}</div>`;
   }).join('');
   el('pf-link_drive').value=c.link_drive||'';
   el('pf-del').hidden=!id; el('pf-hist-wrap').hidden=!id; el('pf-ringwrap').hidden=!id;
   el('pf-link_drive').oninput=updDrive; updDrive();
-  el('pf-nome').oninput=()=>{el('pf-title').textContent=el('pf-nome').value.trim()||'Nova peça';};
-  el('pf-title').textContent=c.nome||'Nova peça';
+  const tit=()=>{el('pf-title').textContent=el('pf-codigo_final').value.trim()||el('pf-nome').value.trim()||'Nova peça';};
+  el('pf-nome').oninput=tit; el('pf-codigo_final').oninput=tit;
+  el('pf-title').textContent=id?cod(c):'Nova peça';
   fillPecaCalc();
   el('pmodal').hidden=false; el('pmodal').scrollTop=0;
   document.body.style.overflow='hidden';
-  setTimeout(()=>el('pf-nome').focus(),30);
+  setTimeout(()=>el('pf-codigo_final').focus(),30);
 }
 function updDrive(){const u=safeUrl(el('pf-link_drive').value);const a=el('pf-drive-open');a.hidden=!u;if(u)a.href=u;}
 function fillPecaCalc(){
   const c=curPeca?corpoById(curPeca):null;
-  const tags=c?[c.especime,c.local_atual,c.processamento].filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('')+(c.sexo?`<span class="tag n">${c.sexo==='F'?'♀ Fem.':'♂ Masc.'}</span>`:''):'';
+  const tags=c?(semFinal(c)?'<span class="tag warn">sem código final</span>':`<span class="tag n">original: ${esc(c.nome)}</span>`)+[c.especime,c.local_atual,c.processamento].filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('')+(c.sexo?`<span class="tag n">${c.sexo==='F'?'♀ Fem.':'♂ Masc.'}</span>`:''):'';
   el('pf-tags').innerHTML=tags;
   if(!c){['__uso','__qtd','__res'].forEach(k=>el('pf-'+k).textContent='—');return;}
   const p=pctDoCorpo(c.id), us=usosDoCorpo(c.id);
@@ -351,7 +374,7 @@ async function savePeca(){
 }
 async function delCorpo(id){
   const c=corpoById(id), n=usosDoCorpo(id).length;
-  const ok=await ask({title:'Excluir a peça '+(c?c.nome:'')+'?', body: n? `Os <b>${n} uso(s)</b> desta peça nas aulas também serão apagados.` : 'Esta peça não tem usos registrados.'});
+  const ok=await ask({title:'Excluir a peça '+cod(c)+'?', body: n? `Os <b>${n} uso(s)</b> desta peça nas aulas também serão apagados.` : 'Esta peça não tem usos registrados.'});
   if(!ok)return;
   const {error}=await db.from('cadaver_corpos').delete().eq('id',id);
   if(error){toast('Erro: '+errMsg(error),true);return;}
@@ -371,7 +394,7 @@ function linePrev(l){
   return {html:`<b>${money(custo)}</b> · ${pct(ap)}${dep>rest+1e-9?' (peça esgota)':''}`,custo,warn:dep>rest+1e-9};
 }
 function renderLines(){
-  const optC=corpos.map(c=>[c.id,c.nome+(c.especime?' · '+c.especime:'')+(pctDoCorpo(c.id)>=100?' (esgotada)':'')]);
+  const optC=[...corpos].sort(byCod).map(c=>[c.id,cod(c)+(semFinal(c)?' (sem cód. final)':'')+(c.especime?' · '+c.especime:'')+(pctDoCorpo(c.id)>=100?' (esgotada)':'')]);
   const optP=procs.map(p=>[p.id,`${p.nome} (${pct(p.pct_por_aluno)}/aluno)`]);
   const sel=(opts,v,ph)=>`<option value="">${ph}</option>`+opts.map(([id,t])=>`<option value="${id}" ${id===v?'selected':''}>${esc(t)}</option>`).join('');
   el('ns-lines').innerHTML=(!corpos.length||!procs.length)?`<div class="warnbox">${!corpos.length?'Cadastre as peças na aba <b>Peças</b>':''}${!corpos.length&&!procs.length?' e ':''}${!procs.length?(corpos.length?'Cadastre ':'')+'os tipos de aula na aba <b>Depreciação</b>':''} para poder registrar aulas.</div>`:
@@ -430,7 +453,7 @@ function renderAulas(){
 function sessCard(s,ls){
   const [y,m,d]=(s.data||'----').split('-'); const dt=s.data?new Date(s.data+'T12:00'):null;
   const tot=ls.reduce((t,a)=>t+custoAula(a),0), al=ls.reduce((t,a)=>Math.max(t,Number(a.num_alunos||0)),0);
-  const optC=corpos.map(c=>`<option value="${c.id}">${esc(c.nome)}${c.especime?' · '+esc(c.especime):''}</option>`).join('');
+  const optC=[...corpos].sort(byCod).map(c=>`<option value="${c.id}">${esc(cod(c))}${c.especime?' · '+esc(c.especime):''}</option>`).join('');
   const optP=procs.map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('');
   return `<article class="sess">
     <div class="sess-h">
@@ -454,7 +477,7 @@ function sessCard(s,ls){
   </article>`;
 }
 function linesTable(ls){
-  const corpoOpts=sel=>corpos.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const corpoOpts=sel=>[...corpos].sort(byCod).map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(cod(c))}</option>`).join('');
   const procOpts=sel=>'<option value="">sem tipo</option>'+procs.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.nome)}</option>`).join('');
   return '<div class="tablewrap"><table><thead><tr><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos na peça</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th><th></th></tr></thead><tbody>'+
     ls.map(a=>`<tr>
@@ -518,7 +541,7 @@ async function saveAula(id,field,val){
 }
 async function delAula(id){
   const a=aulas.find(x=>x.id===id), c=a&&corpoById(a.corpo_id);
-  const ok=await ask({title:'Remover esta peça do dia?', body: a? `${esc(c?c.nome:'—')} · ${fmtFull(a.data)} · ${a.num_alunos} aluno(s). O custo sai dos totais.` : '', ok:'Remover'});
+  const ok=await ask({title:'Remover esta peça do dia?', body: a? `${esc(cod(c))} · ${fmtFull(a.data)} · ${a.num_alunos} aluno(s). O custo sai dos totais.` : '', ok:'Remover'});
   if(!ok)return;
   const {error}=await db.from('cadaver_aulas').delete().eq('id',id);
   if(error){toast('Erro: '+errMsg(error),true);return;}
@@ -716,7 +739,7 @@ function renderDash(){
   const G=cssv('--chart-1'), T=cssv('--chart-2');
   const byD=groupSum([...aulas].sort((a,b)=>(a.data||'').localeCompare(b.data||'')),a=>a.data||'',custoAula);
   mkChart('c-time',baseBar(Object.keys(byD).map(fmtD),Object.values(byD).map(v=>+v.toFixed(2)),G));
-  mkChart('c-corpo',baseBar(corpos.map(c=>c.nome),corpos.map(c=>+custoUsadoCorpo(c).toFixed(2)),T,corpos.length>6));
+  mkChart('c-corpo',baseBar(corpos.map(cod),corpos.map(c=>+custoUsadoCorpo(c).toFixed(2)),T,corpos.length>6));
   const byM=groupSum([...aulas].sort((a,b)=>(a.data||'').localeCompare(b.data||'')),a=>(a.data||'').slice(0,7),custoAula);
   mkChart('c-mes',baseBar(Object.keys(byM).map(fmtMes),Object.values(byM).map(v=>+v.toFixed(2)),T));
   const byP=groupSum(aulas,a=>{const p=procById(a.procedimento_id);return p?p.nome:'sem tipo';},custoAula);
@@ -724,7 +747,7 @@ function renderDash(){
   el('deprec-list').innerHTML = corpos.length? corpos.map(c=>{
     const p=pctDoCorpo(c.id),lv=nivel(p);
     return `<div class="drow">
-      <div class="nm" title="${esc(c.nome)}">${esc(c.nome)}</div>
+      <div class="nm" title="${esc(cod(c))}">${esc(cod(c))}</div>
       <div class="bar"><i class="${lv}" style="width:${Math.min(p,100)}%"></i></div>
       <div class="pv num">${pct(p)}</div>
       <div class="mv num">residual ${money(residualCorpo(c))} de ${money(c.valor)}</div>
@@ -758,16 +781,16 @@ function renderRel(){
   if(!rows.length){w.innerHTML='<div class="empty"><b>Nenhum uso no filtro</b>Ajuste ou limpe os filtros acima.</div>';return;}
   let h='<table><thead><tr><th>Data</th><th>Curso</th><th>Responsável</th><th class="n">Alunos na aula</th><th>Peça</th><th>Tipo de aula</th><th class="n">Alunos na peça</th><th class="n">% por aluno</th><th class="n">Depreciação</th><th class="n">Custo</th><th class="n">Custo/aluno</th></tr></thead><tbody>';
   rows.forEach(a=>{const c=corpoById(a.corpo_id)||{},p=procById(a.procedimento_id),s=sessById(a.sessao_id)||{};
-    h+=`<tr><td>${fmtFull(a.data)}</td><td>${esc(s.curso||'—')}</td><td>${esc(s.responsavel||'—')}</td><td class="n">${s.total_alunos??'—'}</td><td>${esc(c.nome||'—')}</td><td>${esc(p?p.nome:'sem tipo')}</td><td class="n">${a.num_alunos}</td><td class="n">${pct(pctAluno(a))}</td><td class="n">${pct(depAula(a))}</td><td class="n calc">${money(custoAula(a))}</td><td class="n">${money(custoAluno(a))}</td></tr>`;});
+    h+=`<tr><td>${fmtFull(a.data)}</td><td>${esc(s.curso||'—')}</td><td>${esc(s.responsavel||'—')}</td><td class="n">${s.total_alunos??'—'}</td><td>${esc(c.id?cod(c):'—')}</td><td>${esc(p?p.nome:'sem tipo')}</td><td class="n">${a.num_alunos}</td><td class="n">${pct(pctAluno(a))}</td><td class="n">${pct(depAula(a))}</td><td class="n calc">${money(custoAula(a))}</td><td class="n">${money(custoAluno(a))}</td></tr>`;});
   w.innerHTML=h+'</tbody></table>';
 }
 function exportCSV(){
   const rows=filtered();
-  const head=['Unidade','Data','Curso','Responsável','Alunos na aula','Código da peça','Espécimen','Valor da peça','Tipo de aula','Alunos na peça','% por aluno','Depreciação (%)','Custo','Custo por aluno','Observações do dia'];
+  const head=['Unidade','Data','Curso','Responsável','Alunos na aula','Código final','Código original','Espécimen','Valor da peça','Tipo de aula','Alunos na peça','% por aluno','Depreciação (%)','Custo','Custo por aluno','Observações do dia'];
   const dec=v=>Number(v).toFixed(2).replace('.',',');
   const lines=[head.join(';')];
   rows.forEach(a=>{const c=corpoById(a.corpo_id)||{},p=procById(a.procedimento_id),s=sessById(a.sessao_id)||{};
-    lines.push([cur.nome,fmtFull(a.data),s.curso||'',s.responsavel||'',s.total_alunos??'',c.nome||'',c.especime||'',dec(c.valor||0),p?p.nome:'',a.num_alunos,dec(pctAluno(a)),dec(depAula(a)),
+    lines.push([cur.nome,fmtFull(a.data),s.curso||'',s.responsavel||'',s.total_alunos??'',c.codigo_final||'',c.nome||'',c.especime||'',dec(c.valor||0),p?p.nome:'',a.num_alunos,dec(pctAluno(a)),dec(depAula(a)),
       dec(custoAula(a)),dec(custoAluno(a)),s.observacao||''].map(x=>`"${(x??'').toString().replace(/"/g,'""')}"`).join(';'));
   });
   const blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
@@ -778,6 +801,90 @@ function exportCSV(){
 
 // redesenha os gráficos quando o tema do sistema muda
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(cur&&el('tab-rel').classList.contains('active'))renderDash();});
+
+// ================= HISTÓRICO =================
+let hist=[], histFim=true;
+const ENT={cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
+const LBL={codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+  sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
+  pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
+  total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
+const IGN=['id','created_at','peso','pontos','procedimento','campus','unidade','unidade_id','url','arquivo_path','tamanho','mime','tipo'];
+async function loadHist(more){
+  if(!cur) return;
+  const from=more?hist.length:0, uid=cur.id;
+  if(!more) el('w-hist').innerHTML='<div class="tablewrap"><div class="empty">Carregando histórico…</div></div>';
+  const r=await db.from('cadaver_historico').select('*').eq('unidade_id',uid).order('quando',{ascending:false}).range(from,from+199);
+  if(!cur||cur.id!==uid) return;
+  if(r.error){el('w-hist').innerHTML=`<div class="warnbox">${esc(errMsg(r.error))}</div>`;el('h-more').hidden=true;return;}
+  hist=more?hist.concat(r.data):r.data; histFim=r.data.length<200;
+  const keep=el('h-user').value;
+  const users=sortPt(hist.map(quem));
+  el('h-user').innerHTML='<option value="">Todas</option>'+users.map(u=>`<option ${u===keep?'selected':''}>${esc(u)}</option>`).join('');
+  renderHist();
+}
+function quem(h){return h.usuario_nome||h.usuario_email||'Sistema';}
+function nomeReg(h){
+  const r=h.depois||h.antes||{};
+  switch(h.tabela){
+    case 'cadaver_corpos': return (r.codigo_final||'').trim()||r.nome||'—';
+    case 'cadaver_procedimentos': case 'cadaver_unidades': return r.nome||'—';
+    case 'cadaver_sessoes': return fmtFull(r.data)+(r.curso?' · '+r.curso:'');
+    case 'cadaver_aulas': { const c=corpoById(r.corpo_id); return (c?cod(c):'peça excluída')+' em '+fmtFull(r.data); }
+    case 'cadaver_anexos': return r.titulo||'—';
+  }
+  return '—';
+}
+function fmtVal(k,v){
+  if(v==null||v==='') return 'vazio';
+  if(k==='corpo_id'){const c=corpoById(v);return c?cod(c):'peça excluída';}
+  if(k==='procedimento_id'){const p=procById(v);return p?p.nome:'tipo excluído';}
+  if(k==='sessao_id'){const s=sessById(v);return s?fmtFull(s.data):'—';}
+  if(k==='data'||k==='data_aquisicao') return fmtFull(String(v));
+  if(k==='valor') return money(Number(v));
+  return String(v);
+}
+function difs(h){
+  if(h.acao!=='alterou'||!h.antes||!h.depois) return [];
+  return Object.keys(h.depois).filter(k=>!IGN.includes(k)&&JSON.stringify(h.antes[k])!==JSON.stringify(h.depois[k])).map(k=>{
+    const lab=k==='nome'?(h.tabela==='cadaver_corpos'?'Código original':'Nome'):(LBL[k]||k);
+    return `<li>${esc(lab)}: <s>${esc(fmtVal(k,h.antes[k]))}</s> → <b>${esc(fmtVal(k,h.depois[k]))}</b></li>`;
+  });
+}
+function detalhe(h){
+  const r=h.depois||h.antes||{};
+  if(h.tabela==='cadaver_aulas'&&h.acao!=='alterou'){const p=procById(r.procedimento_id);return `<li>${esc(p?p.nome:'sem tipo')} · ${r.num_alunos} aluno(s) na peça</li>`;}
+  if(h.tabela==='cadaver_sessoes'&&h.acao==='criou') return `<li>Responsável: ${esc(r.responsavel||'—')}${r.total_alunos?` · ${r.total_alunos} aluno(s)`:''}</li>`;
+  if(h.tabela==='cadaver_corpos'&&h.acao==='criou') return `<li>${esc([r.especime,r.processamento,r.valor!=null?money(Number(r.valor)):''].filter(Boolean).join(' · '))}</li>`;
+  return '';
+}
+function diaRotulo(d){
+  const hoje=today(), ontem=new Date(Date.now()-864e5).toLocaleDateString('sv');
+  if(d===hoje) return 'Hoje'; if(d===ontem) return 'Ontem';
+  const dt=new Date(d+'T12:00'); return dt.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+}
+function renderHist(){
+  const fu=el('h-user').value, ft=el('h-tipo').value, fa=el('h-acao').value, q=(el('h-busca').value||'').trim().toLowerCase();
+  const list=hist.filter(h=>{
+    if(fu&&quem(h)!==fu) return false;
+    if(ft&&!(ft==='aulas'?['cadaver_sessoes','cadaver_aulas'].includes(h.tabela):h.tabela===ft)) return false;
+    if(fa&&h.acao!==fa) return false;
+    if(q&&!(JSON.stringify([h.antes,h.depois,quem(h)])+nomeReg(h)).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  el('h-more').hidden=histFim;
+  const w=el('w-hist');
+  if(!hist.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhuma ação registrada ainda</b>A partir de agora, tudo o que for criado, alterado ou excluído nesta unidade aparece aqui.</div></div>';return;}
+  if(!list.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nada encontrado</b>Ajuste os filtros acima.</div></div>';return;}
+  const grupos={};
+  list.forEach(h=>{const d=new Date(h.quando).toLocaleDateString('sv');(grupos[d]??=[]).push(h);});
+  w.innerHTML=Object.entries(grupos).map(([d,ls])=>`<div class="hgroup"><h4>${esc(diaRotulo(d))}</h4><div class="hlist">`+ls.map(h=>{
+    const nm=quem(h), ini=nm.split(/[\s@.]+/).filter(Boolean).slice(0,2).map(x=>x[0].toUpperCase()).join('');
+    const det=h.acao==='alterou'?difs(h).join(''):detalhe(h);
+    return `<div class="hi"><span class="av ${h.acao}">${esc(ini)}</span>
+      <div class="hb"><div class="hl"><b>${esc(nm)}</b> ${h.acao} ${ENT[h.tabela]||'um registro'} <b>${esc(nomeReg(h))}</b></div>${det?`<ul class="hd">${det}</ul>`:''}</div>
+      <time datetime="${esc(h.quando)}">${new Date(h.quando).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div>`;}).join('')+'</div></div>').join('');
+}
 
 // ================= LOGIN (Supabase Auth) =================
 let usuario=null, recuperando=false;
@@ -804,6 +911,8 @@ async function entrar(ev){
     return;
   }
   el('lg-senha').value='';
+  const u=data.session.user, md=u.user_metadata||{};
+  db.from('cadaver_historico').insert({acao:'entrou',usuario_id:u.id,usuario_email:u.email,usuario_nome:md.nome||md.name||null}).then(()=>{},()=>{});
   await entrouComo(data.session);
 }
 async function entrouComo(session){

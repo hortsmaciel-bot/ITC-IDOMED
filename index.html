@@ -23,7 +23,7 @@
     <img class="idomed" src="logo-idomed.png" alt="IDOMED – Instituto de Educação Médica">
   </div>
   <h1>Central de Controle Anatômico <span>– IDOMED</span></h1>
-  <div class="who" id="who" hidden><span id="who-mail"></span><button class="btn ghost sm" onclick="sair()">Sair</button></div>
+  <div class="who" id="who" hidden><span class="sync" id="sync" title="Situação do salvamento na nuvem"><i></i><em id="sync-t">Conectado à nuvem</em></span><span id="who-mail"></span><button class="btn ghost sm" onclick="sair()">Sair</button></div>
 </div></header>
 
 <!-- ================= LOGIN ================= -->
@@ -77,6 +77,7 @@
       <button data-tab="anexos">Anexos</button>
       <button data-tab="prem">Depreciação</button>
       <button data-tab="rel">Relatórios</button>
+      <button data-tab="hist">Histórico</button>
     </nav>
   </div></div>
 
@@ -196,6 +197,20 @@
       </div>
       <div id="rel-kpis" class="kpis"></div>
       <div class="tablewrap" id="w-rel"></div>
+    </section>
+    <!-- HISTÓRICO -->
+    <section class="tab" id="tab-hist">
+      <div class="shead"><div><h3>Histórico</h3><p>Tudo o que foi feito nesta unidade, gravado automaticamente na nuvem: quem fez, quando e o que mudou.</p></div>
+        <div class="acts-row"><button class="btn ghost sm" onclick="loadHist()">Atualizar</button></div></div>
+      <div class="toolbar">
+        <div class="field"><label for="h-user">Pessoa</label><select id="h-user" onchange="renderHist()"></select></div>
+        <div class="field"><label for="h-tipo">Assunto</label><select id="h-tipo" onchange="renderHist()">
+          <option value="">Tudo</option><option value="cadaver_corpos">Peças</option><option value="aulas">Aulas</option><option value="cadaver_anexos">Anexos</option><option value="cadaver_procedimentos">Tipos de aula</option><option value="cadaver_unidades">Unidade</option></select></div>
+        <div class="field"><label for="h-acao">Ação</label><select id="h-acao" onchange="renderHist()"><option value="">Todas</option><option value="criou">Criou</option><option value="alterou">Alterou</option><option value="excluiu">Excluiu</option></select></div>
+        <div class="field"><label for="h-busca">Buscar</label><input id="h-busca" type="search" placeholder="código, nome, valor…" oninput="renderHist()"></div>
+      </div>
+      <div id="w-hist"></div>
+      <div class="hmore"><button class="btn ghost sm" id="h-more" onclick="loadHist(true)" hidden>Carregar mais antigos</button></div>
     </section>
   </main>
 </div>

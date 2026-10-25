@@ -380,3 +380,35 @@ a.drive:hover{background:var(--green-soft)}
 @media (max-width:900px){.who{order:2}.top h1{order:3}}
 .pctin{display:inline-flex;align-items:center;gap:2px;color:var(--muted)}
 .pctin input{color:var(--ink)}
+.sub.warn-t{color:var(--warn)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.pgrid .field.main{background:var(--green-soft)}
+.pgrid .field.main label{color:var(--green-ink)}
+.pgrid .field.main input{font-weight:700;border-color:var(--green)}
+
+/* ===================== histórico e salvamento ===================== */
+.sync{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);padding:5px 10px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap}
+.sync i{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none}
+.sync em{font-style:normal}
+.sync.busy i{background:var(--warn);animation:pulse 1s infinite}
+.sync.err{color:var(--danger);background:var(--danger-soft);border-color:transparent}
+.sync.err i{background:var(--danger)}
+@keyframes pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.sync.busy i{animation:none}}
+.hgroup{margin-bottom:20px}
+.hgroup h4{margin:0 0 8px;font:700 14px/1.2 var(--f-display);color:var(--muted);text-transform:capitalize}
+.hlist{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.hi{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);align-items:start}
+.hi:last-child{border-bottom:0}
+.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font:700 12.5px/1 var(--f-body);background:var(--surface-2);color:var(--muted);border:2px solid var(--line)}
+.av.criou{border-color:var(--green);color:var(--green-ink)}
+.av.alterou{border-color:var(--warn);color:var(--warn)}
+.av.excluiu{border-color:var(--danger);color:var(--danger)}
+.hl{font-size:14px;overflow-wrap:anywhere}
+.hd{margin:4px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.hd s{opacity:.75}
+.hd b{color:var(--ink);font-weight:600}
+.hi time{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:2px}
+.hmore{display:flex;justify-content:center;margin-top:6px}
+@media (max-width:900px){.sync em{display:none}.sync{padding:6px}}
+@media (max-width:520px){.who span.sync{display:inline-flex}}
