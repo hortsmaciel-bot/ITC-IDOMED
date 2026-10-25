@@ -378,3 +378,5 @@ a.drive:hover{background:var(--green-soft)}
 @media (max-width:900px){.who{margin-left:auto}}
 @media (max-width:520px){.who span{display:none}.lcard{padding:24px 18px}}
 @media (max-width:900px){.who{order:2}.top h1{order:3}}
+.pctin{display:inline-flex;align-items:center;gap:2px;color:var(--muted)}
+.pctin input{color:var(--ink)}

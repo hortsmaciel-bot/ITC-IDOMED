@@ -151,11 +151,12 @@
         <div class="formcard"><div class="frow">
           <div class="field"><label for="np-nome">Nome do tipo de aula</label><input id="np-nome" placeholder="ex.: Acesso venoso central"></div>
           <div class="field"><label for="np-pct">Depreciação por aluno (%)</label><input id="np-pct" type="number" min="0" step="0.01" placeholder="ex.: 0,5"></div>
+          <div class="field"><label for="np-ideal">Desgaste ideal (%)</label><input id="np-ideal" type="number" min="1" max="100" step="1" value="100"></div>
           <div class="field"><label for="np-desc">Descrição</label><input id="np-desc" placeholder="opcional"></div>
           <div class="field"><button class="btn green" onclick="addProc()">Adicionar tipo</button></div>
         </div></div>
         <div class="tablewrap" id="w-procs"></div>
-        <p class="foothint">Alunos até esgotar = 100 ÷ percentual por aluno: quantos alunos, só nesse tipo de aula, uma peça nova aguentaria.</p>
+        <p class="foothint">Desgaste ideal: até quanto do valor da peça esse tipo de aula deve consumir (100% = a peça inteira). Alunos até o desgaste ideal = desgaste ideal ÷ percentual por aluno: quantos alunos, só nesse tipo de aula, uma peça nova atende até chegar a esse limite.</p>
       </div>
       <div class="block">
         <h3>Simulador</h3>

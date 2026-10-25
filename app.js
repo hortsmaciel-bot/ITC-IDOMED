@@ -33,6 +33,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
   if(/total_alunos/.test(m)) return 'O banco ainda não tem o campo de total de alunos. Rode o script atualizacao-v3.sql no Supabase.';
   if(/cadaver_sessoes|cadaver_anexos|sessao_id|codigo_final|especime|local_atual|uso_inicial|link_drive/.test(m)) return 'O banco ainda não tem a atualização v2. Rode o script atualizacao-v2.sql no Supabase.';
   if(/unidade_id|cadaver_unidades/.test(m)) return 'O banco ainda não tem a estrutura de unidades. Rode o script migracao-unidades.sql no Supabase.';
@@ -611,15 +612,18 @@ async function addProc(){
   if(!nome){toast('Dê um nome ao tipo de aula.',true);return;}
   const p=Number(el('np-pct').value||0);
   if(!(p>0)){toast('Informe o percentual por aluno.',true);return;}
-  const row={nome, pct_por_aluno:p, descricao:el('np-desc').value.trim()||null, unidade_id:cur.id};
+  const ideal=el('np-ideal').value===''?100:Number(el('np-ideal').value);
+  if(!(ideal>0&&ideal<=100)){toast('O desgaste ideal precisa estar entre 0 e 100%.',true);return;}
+  const row={nome, pct_por_aluno:p, desgaste_ideal:ideal, descricao:el('np-desc').value.trim()||null, unidade_id:cur.id};
   const {data,error}=await db.from('cadaver_procedimentos').insert(row).select().single();
   if(error){toast('Erro: '+errMsg(error),true);return;}
-  procs.push(data); ['np-nome','np-pct','np-desc'].forEach(i=>el(i).value='');
+  procs.push(data); ['np-nome','np-pct','np-desc'].forEach(i=>el(i).value=''); el('np-ideal').value=100;
   renderAll(); toast('Tipo de aula adicionado.');
 }
 async function saveProc(id,field,val){
   const p=procById(id); if(!p)return;
   if(field==='pct_por_aluno') val=Number(val||0);
+  if(field==='desgaste_ideal'){val=Number(val||0);if(!(val>0&&val<=100)){toast('O desgaste ideal precisa estar entre 0 e 100%.',true);renderProcs();return;}}
   p[field]=val;
   const {error}=await db.from('cadaver_procedimentos').update({[field]:val}).eq('id',id);
   if(error){toast('Erro ao salvar: '+errMsg(error),true);return;}
@@ -636,7 +640,7 @@ async function delProc(id){
 }
 async function copyProcs(){
   const from=el('cp-from').value; if(!from)return;
-  const r=await db.from('cadaver_procedimentos').select('nome,pct_por_aluno,descricao').eq('unidade_id',from).order('created_at');
+  const r=await db.from('cadaver_procedimentos').select('nome,pct_por_aluno,desgaste_ideal,descricao').eq('unidade_id',from).order('created_at');
   if(r.error){toast('Erro: '+errMsg(r.error),true);return;}
   if(!r.data.length){toast('Essa unidade não tem tipos de aula cadastrados.',true);return;}
   const {data,error}=await db.from('cadaver_procedimentos').insert(r.data.map(x=>({...x,unidade_id:cur.id}))).select();
@@ -651,13 +655,14 @@ function renderProcs(){
       (outras.length?`<div class="copyrow"><select id="cp-from" aria-label="Unidade de origem">${outras.map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('')}</select><button class="btn ghost sm" onclick="copyProcs()">Copiar tipos desta unidade</button></div>`:'')+'</div>';
     return;
   }
-  let h='<table><thead><tr><th>Tipo de aula</th><th class="n">% por aluno</th><th class="n">Alunos até esgotar</th><th class="n">Usos lançados</th><th class="n">Custo acumulado</th><th>Descrição</th><th></th></tr></thead><tbody>';
+  let h='<table><thead><tr><th>Tipo de aula</th><th class="n">% por aluno</th><th class="n">Desgaste ideal</th><th class="n">Alunos até o desgaste ideal</th><th class="n">Usos lançados</th><th class="n">Custo acumulado</th><th>Descrição</th><th></th></tr></thead><tbody>';
   procs.forEach(p=>{
     const as=aulas.filter(a=>a.procedimento_id===p.id), tot=as.reduce((s,a)=>s+custoAula(a),0);
-    const ate=p.pct_por_aluno>0? 100/Number(p.pct_por_aluno) : 0;
+    const ideal=Number(p.desgaste_ideal??100), ate=p.pct_por_aluno>0? ideal/Number(p.pct_por_aluno) : 0;
     h+=`<tr>
       <td><input value="${esc(p.nome)}" aria-label="Tipo de aula" onchange="saveProc('${p.id}','nome',this.value)"></td>
       <td class="n"><input class="w-int num" type="number" min="0" step="0.01" value="${p.pct_por_aluno}" aria-label="% por aluno" onchange="saveProc('${p.id}','pct_por_aluno',this.value)"></td>
+      <td class="n"><span class="pctin"><input class="w-int num" type="number" min="1" max="100" step="1" value="${p.desgaste_ideal??100}" aria-label="Desgaste ideal (%)" onchange="saveProc('${p.id}','desgaste_ideal',this.value)">%</span></td>
       <td class="n calc">${ate?NUM.format(Math.floor(ate)):'—'}</td>
       <td class="n">${as.length}</td>
       <td class="n">${money(tot)}</td>
