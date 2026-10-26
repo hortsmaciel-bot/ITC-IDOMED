@@ -439,3 +439,54 @@ th.th-img{width:56px}
 .sheet-segimg{width:64px;height:84px;display:grid;place-items:center;border-radius:12px;background:var(--surface);border:1px solid var(--line);flex:none}
 .sheet-segimg img{max-width:54px;max-height:74px;object-fit:contain}
 @media (max-width:700px){.segpick{grid-template-columns:repeat(2,minmax(0,1fr))}.segopt img{height:70px}.orig-h{gap:10px}.orig-sum{gap:12px}}
+
+/* ===================== avaliações (NPS) ===================== */
+.nps-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13.5px;background:var(--surface)}
+.nps-strip.on{background:var(--green-soft)}
+.nps-ic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--warn);font-size:14px;border:1px solid var(--line);flex:none}
+.npsv{font-weight:800}
+.npsv.ok{color:var(--green-ink)} .npsv.mid{color:var(--warn)} .npsv.hot{color:var(--danger)}
+.qcard{position:relative;background:var(--surface);border-radius:18px;max-width:520px;width:100%;margin:auto;padding:26px 24px 22px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.qcard small{font:600 11px/1 var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.qcard h3{margin:0;font:800 24px/1.2 var(--f-display);text-wrap:balance}
+.q-ask{margin:0;color:var(--muted)}
+.qx{position:absolute;top:12px;right:12px}
+.q-box{background:#fff;padding:14px;border-radius:14px;border:1px solid var(--line);line-height:0}
+.q-box img,.q-box canvas{width:min(300px,70vw)!important;height:auto!important;display:block}
+.q-status{margin:0;font-size:13.5px;font-weight:600}
+.q-status.ok{color:var(--green-ink)} .q-status.off{color:var(--danger)}
+.q-link{display:flex;gap:8px;width:100%;flex-wrap:wrap}
+.q-link input{flex:1;min-width:180px;font-size:13px}
+.q-link a{text-decoration:none}
+.rep{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 22px 14px;box-shadow:var(--shadow)}
+.rep-h{display:flex;align-items:center;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:16px}
+.rep-brand{display:flex;align-items:center;gap:14px}
+.rep-brand img{height:34px;width:auto}
+.rep-brand .itc-l{display:var(--logo-itc-l)} .rep-brand .itc-d{display:var(--logo-itc-d)}
+.rep-brand .idomed{height:26px;filter:var(--logo-idomed-filter)}
+.rep-brand .sep{width:1px;height:28px;background:var(--line)}
+.rep-h small{font:600 11px/1 var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--green-ink)}
+.rep-h h3{margin:4px 0 2px;font:800 24px/1.15 var(--f-display);letter-spacing:-.015em}
+.rep-h p{margin:0;color:var(--muted);font-size:13.5px}
+.rep-lead{font-size:17px;line-height:1.5;margin:0 0 16px;max-width:70ch;text-wrap:pretty}
+.rep-lead b{color:var(--green-ink)}
+.kpi .v small{font-size:13px;font-weight:600;color:var(--muted)}
+.kpi.lead .v small{color:var(--band-muted)}
+.npsbar{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--surface-2);margin-top:4px}
+.npsbar i{display:block;height:100%}
+.npsbar .d,.npslg .d{background:var(--danger)} .npsbar .n,.npslg .n{background:var(--warn)} .npsbar .p,.npslg .p{background:var(--green)}
+.npslg{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:8px}
+.npslg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.vozes{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:10px}
+.vozes blockquote{margin:0;background:var(--surface-2);border-radius:12px;padding:14px 16px;border-left:4px solid var(--green)}
+.vozes p{margin:0 0 8px;font-size:14.5px;line-height:1.5}
+.vozes footer{font-size:12px;color:var(--muted)}
+td.wrapcell{white-space:normal;min-width:240px;max-width:420px}
+.av-resp-wrap{margin-top:28px}
+@media print{
+  body.print-av .top,body.print-av .uband,body.print-av .av-ctrl,body.print-av .av-resp-wrap,body.print-av .toast{display:none!important}
+  body.print-av main.wrap{padding:0}
+  body.print-av .rep{border:0;box-shadow:none;padding:0}
+  body.print-av .panel,body.print-av .kpi{break-inside:avoid}
+}
+@media (max-width:900px){.rep-k{grid-template-columns:repeat(2,minmax(0,1fr))}}

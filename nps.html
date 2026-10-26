@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Avaliação da Aula – ITC · IDOMED</title>
+<meta name="description" content="Avaliação da aula prática em cadáver fresco – ITC e IDOMED.">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="logo-itc.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;600;700;800&family=Red+Hat+Text:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+/* Página do aluno: uma coluna, pensada para o celular logo depois da aula */
+body{min-height:100vh}
+.nps-top{background:var(--surface);border-bottom:1px solid var(--line)}
+.nps-top .wrap{display:flex;align-items:center;gap:16px;padding-block:12px;max-width:640px}
+.nps-top img{height:34px;width:auto;display:block}
+.nps-top .itc-l{display:var(--logo-itc-l)} .nps-top .itc-d{display:var(--logo-itc-d)}
+.nps-top .idomed{height:26px;filter:var(--logo-idomed-filter)}
+.nps-top .sep{width:1px;height:28px;background:var(--line)}
+.nps{max-width:640px;margin:0 auto;padding-block:22px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+.hero{background:var(--teal);color:var(--band-ink);border-radius:16px;padding:20px 20px 18px}
+.hero small{display:block;font:600 11px/1 var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--band-muted);margin-bottom:8px}
+.hero h1{margin:0;font:800 clamp(22px,6vw,28px)/1.15 var(--f-display);letter-spacing:-.015em;text-wrap:balance}
+.hero p{margin:8px 0 0;color:var(--band-muted);font-size:14px}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 16px;display:flex;flex-direction:column;gap:12px}
+.q .n{font:700 12px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--green-ink)}
+.q h2{margin:0;font:700 18px/1.3 var(--f-display);text-wrap:balance}
+.scale{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:5px}
+.scale button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:9px;border:1.5px solid var(--line);background:var(--surface-2);font:700 15px/1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--ink);transition:background .12s,border-color .12s,transform .12s}
+.scale button:hover{border-color:var(--green)}
+.scale button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.scale button.on{background:var(--green);border-color:var(--green);color:#fff;transform:translateY(-1px)}
+.scale.rec button.on.d{background:var(--danger);border-color:var(--danger)}
+.scale.rec button.on.p{background:var(--warn);border-color:var(--warn)}
+.ends{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:12px}
+textarea{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%;min-height:110px;resize:vertical;font:inherit;color:inherit}
+textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--green-soft)}
+.ident{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.ident input{width:20px;height:20px;accent-color:var(--green)}
+.idf{display:grid;gap:10px}
+.send{padding:15px 16px;font-size:16px;border-radius:12px;width:100%}
+.send:disabled{opacity:.6;cursor:wait}
+.note{font-size:12.5px;color:var(--muted);text-align:center;margin:0}
+.state{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 22px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
+.state .ic{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--green-soft);color:var(--green-ink);font:800 30px/1 var(--f-display)}
+.state.err .ic{background:var(--warn-soft);color:var(--warn)}
+.state h2{margin:0;font:800 22px/1.2 var(--f-display)}
+.state p{margin:0;color:var(--muted);max-width:42ch}
+.ferr{background:var(--danger-soft);color:var(--danger);border-radius:10px;padding:11px 13px;font-size:14px;font-weight:500}
+@media (max-width:420px){.scale{grid-template-columns:repeat(6,minmax(0,1fr))}.scale button{padding:13px 0}}
+</style>
+</head>
+<body>
+<header class="nps-top"><div class="wrap">
+  <img class="itc-l" src="logo-itc.png" alt="ITC – Instituto de Treinamento em Cadáveres">
+  <img class="itc-d" src="logo-itc-escuro.png" alt="ITC – Instituto de Treinamento em Cadáveres">
+  <span class="sep" aria-hidden="true"></span>
+  <img class="idomed" src="logo-idomed.png" alt="IDOMED – Instituto de Educação Médica">
+</div></header>
+
+<main class="nps">
+  <div class="state" id="st-load"><p>Carregando avaliação…</p></div>
+
+  <form id="form" hidden novalidate>
+    <div class="hero">
+      <small id="h-unid">IDOMED</small>
+      <h1>Como foi a sua aula prática em cadáver fresco?</h1>
+      <p id="h-meta"></p>
+    </div>
+
+    <section class="q" aria-labelledby="q1">
+      <span class="n">Pergunta 1 de 3</span>
+      <h2 id="q1">O quanto esta aula em cadáver fresco acrescentou na sua formação médica?</h2>
+      <div class="scale" id="s1" role="radiogroup" aria-labelledby="q1"></div>
+      <div class="ends"><span>0 · Não acrescentou</span><span>10 · Acrescentou muito</span></div>
+    </section>
+
+    <section class="q" aria-labelledby="q2">
+      <span class="n">Pergunta 2 de 3</span>
+      <h2 id="q2">De 0 a 10, o quanto você recomendaria esta aula a um colega de medicina?</h2>
+      <div class="scale rec" id="s2" role="radiogroup" aria-labelledby="q2"></div>
+      <div class="ends"><span>0 · Não recomendaria</span><span>10 · Com certeza recomendaria</span></div>
+    </section>
+
+    <section class="q" aria-labelledby="q3">
+      <span class="n">Pergunta 3 de 3 · opcional</span>
+      <h2 id="q3"><label for="coment">O que mais marcou esta aula para você? O que poderia melhorar?</label></h2>
+      <textarea id="coment" maxlength="1500" placeholder="Escreva com suas palavras"></textarea>
+    </section>
+
+    <section class="q">
+      <label class="ident" for="quero"><input type="checkbox" id="quero"> Quero me identificar (opcional)</label>
+      <div class="idf" id="idf" hidden>
+        <div class="field"><label for="nome">Nome</label><input id="nome" maxlength="120" autocomplete="name"></div>
+        <div class="field"><label for="email">E-mail</label><input id="email" type="email" maxlength="160" autocomplete="email"></div>
+      </div>
+      <p class="note" style="text-align:left">Sem identificação, sua resposta é anônima: a coordenação vê só as notas e o comentário.</p>
+    </section>
+
+    <div class="ferr" id="ferr" role="alert" hidden></div>
+    <button class="btn green send" id="send" type="submit">Enviar avaliação</button>
+    <p class="note">Leva menos de 1 minuto. Obrigado por ajudar a melhorar as aulas práticas.</p>
+  </form>
+
+  <div class="state" id="st-ok" hidden><div class="ic">✓</div><h2>Avaliação enviada</h2><p>Obrigado! Sua resposta ajuda a IDOMED e o ITC a melhorar as aulas práticas em cadáver fresco.</p></div>
+  <div class="state err" id="st-err" hidden><div class="ic">!</div><h2 id="e-t">Link inválido</h2><p id="e-p">Confira se você abriu o link ou o QR Code mostrado em sala.</p></div>
+</main>
+
+<script src="config.js"></script>
+<script>
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false}});
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('t') || '';
+let n1=null, n2=null;
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
+function deviceId(){let d=store('itc_nps_dev');if(!d){d=(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now());store('itc_nps_dev',d);}return d;}
+function show(id){['st-load','form','st-ok','st-err'].forEach(x=>$(x).hidden=x!==id);}
+function erro(t,p){$('e-t').textContent=t;$('e-p').textContent=p;show('st-err');}
+function scale(id,set){
+  const box=$(id);
+  box.innerHTML=Array.from({length:11},(_,i)=>`<button type="button" role="radio" aria-checked="false" aria-label="Nota ${i}" data-v="${i}">${i}</button>`).join('');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    box.querySelectorAll('button').forEach(x=>{x.classList.remove('on','d','p');x.setAttribute('aria-checked','false');});
+    const v=+b.dataset.v; b.classList.add('on'); if(id==='s2') b.classList.add(v<=6?'d':v<=8?'p':'g'); b.setAttribute('aria-checked','true'); set(v); $('ferr').hidden=true;
+  });
+}
+const fmt=d=>{if(!d)return'';const[y,m,dd]=d.split('-');return dd+'/'+m+'/'+y;};
+(async()=>{
+  if(!token){erro('Link incompleto','Abra o link completo ou aponte a câmera para o QR Code mostrado em sala.');return;}
+  if(store('itc_nps_ok_'+token)){show('st-ok');return;}
+  const {data,error}=await db.rpc('nps_info',{p_token:token});
+  if(error){erro('Não foi possível carregar','Verifique sua conexão com a internet e tente de novo.');return;}
+  if(!data){erro('Link inválido','Este link de avaliação não existe. Confira o QR Code mostrado em sala.');return;}
+  if(!data.aberto){erro('Avaliação encerrada','O prazo para avaliar esta aula terminou. Obrigado pelo interesse!');return;}
+  $('h-unid').textContent=data.unidade||'IDOMED';
+  $('h-meta').textContent=[data.curso,fmt(data.data)].filter(Boolean).join(' · ');
+  scale('s1',v=>n1=v); scale('s2',v=>n2=v);
+  show('form');
+})();
+$('quero').onchange=()=>{$('idf').hidden=!$('quero').checked;};
+$('form').onsubmit=async ev=>{
+  ev.preventDefault();
+  const fe=$('ferr');
+  if(n1===null||n2===null){fe.textContent=n1===null?'Responda a pergunta 1 escolhendo uma nota de 0 a 10.':'Responda a pergunta 2 escolhendo uma nota de 0 a 10.';fe.hidden=false;(n1===null?$('s1'):$('s2')).scrollIntoView({behavior:'smooth',block:'center'});return;}
+  const id=$('quero').checked, email=id?$('email').value.trim():'';
+  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){fe.textContent='Confira o e-mail digitado, ou deixe em branco.';fe.hidden=false;return;}
+  const b=$('send'); b.disabled=true; b.textContent='Enviando…';
+  const {data,error}=await db.rpc('nps_responder',{p_token:token,p_formacao:n1,p_recomendacao:n2,
+    p_comentario:$('coment').value,p_nome:id?$('nome').value:null,p_email:email||null,p_dispositivo:deviceId()});
+  b.disabled=false; b.textContent='Enviar avaliação';
+  if(error){fe.textContent='Não foi possível enviar. Verifique sua conexão e tente de novo.';fe.hidden=false;return;}
+  if(data==='ok'||data==='duplicado'){store('itc_nps_ok_'+token,'1');show('st-ok');if(data==='duplicado')$('st-ok').querySelector('p').textContent='Você já tinha avaliado esta aula por este aparelho. Obrigado!';return;}
+  if(data==='encerrado'){erro('Avaliação encerrada','O prazo para avaliar esta aula terminou.');return;}
+  if(data==='lotado'){erro('Avaliação completa','Esta aula já recebeu o número máximo de avaliações.');return;}
+  fe.textContent='Não foi possível enviar ('+data+'). Tente de novo.';fe.hidden=false;
+};
+</script>
+</body>
+</html>

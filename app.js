@@ -53,6 +53,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
   if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
   if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
   if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
@@ -165,7 +166,7 @@ async function openUnit(id){
   el('ns-data').value=today(); el('ax-file').value=''; anexoFiltro='';
   lines=[newLine()];
   showTab('pecas');
-  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[]; renderAll();
+  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];respostas=[];avAll=null; renderAll();
   const {error}=await load();
   if(error){toast('Erro ao carregar: '+errMsg(error),true);}
   if(cur&&cur.id===id) renderAll();
@@ -177,6 +178,7 @@ function showTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id==='tab-'+t));
   if(t==='rel'){ renderDash(); renderRel(); }
   if(t==='hist') loadHist();
+  if(t==='aval') renderAval();
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
@@ -215,23 +217,26 @@ function rotulo(p){const lv=nivel(p);return p>=100?'esgotada':lv==='hot'?'quase 
 // ---------- carga ----------
 async function load(){
   const uid=cur.id;
-  const [r1,r2,r3,r4,r5]=await Promise.all([
+  const [r1,r2,r3,r4,r5,r6]=await Promise.all([
     db.from('cadaver_corpos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_procedimentos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_aulas').select('*').eq('unidade_id',uid).order('data'),
     db.from('cadaver_sessoes').select('*').eq('unidade_id',uid).order('data',{ascending:false}),
-    db.from('cadaver_anexos').select('*').eq('unidade_id',uid).order('created_at',{ascending:false})
+    db.from('cadaver_anexos').select('*').eq('unidade_id',uid).order('created_at',{ascending:false}),
+    db.from('cadaver_nps_respostas').select('*').eq('unidade_id',uid).order('created_at',{ascending:false})
   ]);
   if(!cur||cur.id!==uid) return {};
   const e=r1.error||r2.error||r3.error;
   if(e) return {error:e};
   corpos=r1.data||[]; procs=r2.data||[]; aulas=r3.data||[];
   sessoes=r4.error?[]:(r4.data||[]); anexos=r5.error?[]:(r5.data||[]);
+  respostas=r6.error?[]:(r6.data||[]); respErr=r6.error||null; avAll=null;
   await signAnexos();
   if(r4.error||r5.error) return {error:r4.error||r5.error};
   return {};
 }
 function renderAll(){
+  avAll=null;
   recompute(); fillLists(); fillSelects();
   renderPecas(); renderLines(); renderAulas(); renderAnexos(); renderProcs(); renderSim();
   if(el('tab-rel').classList.contains('active')){ renderDash(); renderRel(); }
@@ -522,6 +527,7 @@ function sessCard(s,ls){
       </div>
       <div class="sess-sum"><b>${money(tot)}</b><span>${s.total_alunos?`<b class="al">${s.total_alunos}</b> aluno(s) · `:''}${ls.length} peça(s)</span><button class="icon" title="Excluir dia de aula" onclick="delSess('${s.id}')">${TRASH}</button></div>
     </div>
+    ${npsStrip(s)}
     ${ls.length?linesTable(ls):'<div class="empty">Nenhuma peça neste dia.</div>'}
     <div class="sess-add">
       <select id="sa-c-${s.id}" aria-label="Peça"><option value="">+ Peça…</option>${optC}</select>
@@ -860,11 +866,11 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(c
 // ================= HISTÓRICO =================
 let hist=[], histFim=true;
 const ENT={cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
-const LBL={segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+const LBL={nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
   sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
   pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
   total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
-const IGN=['id','created_at','peso','pontos','procedimento','campus','unidade','unidade_id','url','arquivo_path','tamanho','mime','tipo'];
+const IGN=['nps_token','id','created_at','peso','pontos','procedimento','campus','unidade','unidade_id','url','arquivo_path','tamanho','mime','tipo'];
 async function loadHist(more){
   if(!cur) return;
   const from=more?hist.length:0, uid=cur.id;
@@ -897,6 +903,7 @@ function fmtVal(k,v){
   if(k==='sessao_id'){const s=sessById(v);return s?fmtFull(s.data):'—';}
   if(k==='data'||k==='data_aquisicao') return fmtFull(String(v));
   if(k==='valor') return money(Number(v));
+  if(k==='nps_aberto_ate') return fmtDH(String(v));
   if(k==='segmento') return SEG[v]?SEG[v].l:String(v);
   return String(v);
 }
@@ -940,6 +947,196 @@ function renderHist(){
     return `<div class="hi"><span class="av ${h.acao}">${esc(ini)}</span>
       <div class="hb"><div class="hl"><b>${esc(nm)}</b> ${h.acao} ${ENT[h.tabela]||'um registro'} <b>${esc(nomeReg(h))}</b></div>${det?`<ul class="hd">${det}</ul>`:''}</div>
       <time datetime="${esc(h.quando)}">${new Date(h.quando).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div>`;}).join('')+'</div></div>').join('');
+}
+
+// ================= AVALIAÇÕES (NPS dos alunos) =================
+let respostas=[], respErr=null, avAll=null;
+const npsLink=t=>new URL('nps.html?t='+encodeURIComponent(t),location.href).href;
+const aberta=s=>!!(s&&s.nps_token&&s.nps_aberto_ate&&new Date(s.nps_aberto_ate)>new Date());
+function novoToken(){const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',r=new Uint32Array(12);crypto.getRandomValues(r);return [...r].map(x=>a[x%a.length]).join('');}
+function fmtDH(iso){if(!iso)return'';const d=new Date(iso);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+function npsCalc(rs){const n=rs.length;if(!n)return null;const P=rs.filter(r=>r.nota_recomendacao>=9).length,D=rs.filter(r=>r.nota_recomendacao<=6).length;return {n,P,D,N:n-P-D,nps:Math.round((P-D)/n*100)};}
+function formCalc(rs){const n=rs.length;if(!n)return null;return {media:rs.reduce((t,r)=>t+r.nota_formacao,0)/n,alta:rs.filter(r=>r.nota_formacao>=9).length/n*100};}
+const npsCls=v=>v==null?'':v>=50?'ok':v>=0?'mid':'hot';
+function npsStrip(s){
+  if(respErr) return '';
+  const rs=respostas.filter(r=>r.sessao_id===s.id), k=npsCalc(rs), f=formCalc(rs), tot=Number(s.total_alunos)||0;
+  if(!s.nps_token) return `<div class="nps-strip"><span class="nps-ic">★</span><span class="muted">Avaliação dos alunos ainda não aberta para este dia.</span><button class="btn green sm" onclick="gerarLink('${s.id}')">Gerar link de avaliação</button></div>`;
+  const ab=aberta(s);
+  return `<div class="nps-strip ${ab?'on':''}"><span class="nps-ic">★</span>
+    <span><b>${rs.length}${tot?` de ${tot}`:''}</b> aluno(s) avaliaram${k?` · formação <b>${NUM.format(f.media)}</b>/10 · NPS <b class="npsv ${npsCls(k.nps)}">${k.nps}</b>`:''}
+    <span class="muted"> · ${ab?'aberta até '+fmtDH(s.nps_aberto_ate):'encerrada'}</span></span>
+    <span class="grow"></span>
+    <button class="btn ghost sm" onclick="mostrarQR('${s.id}')">${ab?'Mostrar QR Code':'Ver link'}</button>
+    ${ab?`<button class="btn ghost sm" onclick="setAberto('${s.id}',0)">Encerrar</button>`:`<button class="btn ghost sm" onclick="setAberto('${s.id}',48)">Reabrir por 48 h</button>`}
+  </div>`;
+}
+async function gerarLink(id){
+  const s=sessById(id); if(!s) return;
+  const patch={nps_token:s.nps_token||novoToken(), nps_aberto_ate:new Date(Date.now()+48*3600e3).toISOString()};
+  const {error}=await db.from('cadaver_sessoes').update(patch).eq('id',id);
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  Object.assign(s,patch); renderAulas(); mostrarQR(id);
+}
+async function setAberto(id,horas){
+  const s=sessById(id); if(!s) return;
+  const v=new Date(Date.now()+horas*3600e3).toISOString();
+  const {error}=await db.from('cadaver_sessoes').update({nps_aberto_ate:v}).eq('id',id);
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  s.nps_aberto_ate=v; renderAulas(); if(!el('qmodal').hidden) mostrarQR(id);
+  toast(horas?'Avaliação reaberta por 48 h.':'Avaliação encerrada.');
+}
+function mostrarQR(id){
+  const s=sessById(id); if(!s||!s.nps_token) return;
+  const url=npsLink(s.nps_token), ab=aberta(s);
+  el('q-title').textContent=[s.curso,fmtFull(s.data)].filter(Boolean).join(' · ')||'Dia de aula';
+  el('q-unid').textContent=cur?cur.nome:'';
+  el('q-url').value=url; el('q-open').href=url;
+  el('q-status').textContent=ab?'Aberta até '+fmtDH(s.nps_aberto_ate):'Encerrada: os alunos não conseguem mais responder.';
+  el('q-status').className='q-status '+(ab?'ok':'off');
+  el('q-act').innerHTML=ab?`<button class="btn ghost" onclick="setAberto('${id}',0)">Encerrar avaliação</button>`:`<button class="btn ghost" onclick="setAberto('${id}',48)">Reabrir por 48 h</button>`;
+  const box=el('q-box'); box.innerHTML='';
+  if(window.QRCode){ new QRCode(box,{text:url,width:300,height:300,colorDark:'#0f3e3c',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); }
+  else box.innerHTML='<p class="muted">Não foi possível gerar o QR Code. Use o link abaixo.</p>';
+  el('qmodal').hidden=false;
+}
+function fecharQR(){el('qmodal').hidden=true;}
+async function copiarLink(){
+  const i=el('q-url');
+  try{await navigator.clipboard.writeText(i.value);toast('Link copiado.');}
+  catch(e){i.select();toast('Selecione e copie o link (Ctrl+C).');}
+}
+
+// ---------- relatório semestral ----------
+const semKey=d=>d?d.slice(0,4)+'.'+(+d.slice(5,7)<=6?1:2):'';
+const semLabel=k=>{const [y,s]=k.split('.');return `${s}º semestre de ${y}`;};
+function custosDe(cs,ps,as){
+  const pm=new Map(ps.map(p=>[p.id,p])), out={};
+  cs.forEach(c=>{
+    const list=as.filter(a=>a.corpo_id===c.id).sort((x,y)=>((x.data||'')+(x.created_at||'')).localeCompare((y.data||'')+(y.created_at||'')));
+    let acc=Math.min(Math.max(Number(c.uso_inicial||0),0),100);
+    list.forEach(a=>{const p=pm.get(a.procedimento_id),nom=(p?Number(p.pct_por_aluno||0):0)*Number(a.num_alunos||0),ap=Math.min(nom,Math.max(100-acc,0));out[a.id]=Number(c.valor||0)*ap/100;acc+=ap;});
+  });
+  return out;
+}
+function avEscopo(){return el('av-esc').value||'unidade';}
+async function avData(){
+  if(avEscopo()==='unidade') return {unids:[cur],corpos,procs,aulas,sessoes,respostas};
+  if(avAll) return avAll;
+  el('av-rep').innerHTML='<div class="tablewrap"><div class="empty">Carregando dados de todas as unidades…</div></div>';
+  const [a,b,c,d,e]=await Promise.all(['cadaver_corpos','cadaver_procedimentos','cadaver_aulas','cadaver_sessoes','cadaver_nps_respostas'].map(t=>db.from(t).select('*')));
+  const er=a.error||b.error||c.error||d.error||e.error;
+  if(er){toast('Erro: '+errMsg(er),true);return null;}
+  avAll={unids:unidades,corpos:a.data,procs:b.data,aulas:c.data,sessoes:d.data,respostas:e.data};
+  return avAll;
+}
+function avSemestres(D){
+  const ks=new Set([semKey(today())]); D.sessoes.forEach(s=>s.data&&ks.add(semKey(s.data)));
+  return [...ks].sort().reverse();
+}
+async function renderAval(){
+  if(!cur) return;
+  if(respErr){el('av-rep').innerHTML=`<div class="warnbox">${esc(errMsg(respErr))}</div>`;el('av-resp').innerHTML='';return;}
+  const D=await avData(); if(!D) return;
+  const sel=el('av-sem'), keep=sel.value, ks=avSemestres(D);
+  sel.innerHTML=ks.map(k=>`<option value="${k}" ${k===keep?'selected':''}>${semLabel(k)}</option>`).join('');
+  if(!ks.includes(keep)) sel.value=ks[0];
+  const sem=sel.value, todas=avEscopo()==='todas';
+  const custo=custosDe(D.corpos,D.procs,D.aulas);
+  const uNome=id=>(D.unids.find(u=>u.id===id)||{}).nome||'—';
+  const ses=D.sessoes.filter(s=>semKey(s.data)===sem).map(s=>{
+    const ls=D.aulas.filter(a=>a.sessao_id===s.id), rs=D.respostas.filter(r=>r.sessao_id===s.id);
+    const al=Number(s.total_alunos)>0?Number(s.total_alunos):ls.reduce((t,a)=>Math.max(t,Number(a.num_alunos||0)),0);
+    return {s,ls,rs,al,custo:ls.reduce((t,a)=>t+(custo[a.id]||0),0)};
+  });
+  const rs=ses.flatMap(x=>x.rs), alunos=ses.reduce((t,x)=>t+x.al,0), inv=ses.reduce((t,x)=>t+x.custo,0);
+  const alAval=ses.filter(x=>x.s.nps_token).reduce((t,x)=>t+x.al,0);
+  const k=npsCalc(rs), f=formCalc(rs);
+  const invAl=alunos?inv/alunos:0, promEst=k&&alunos?alunos*k.P/k.n:0;
+  const titulo=todas?'IDOMED · todas as unidades':cur.nome;
+  const grp=(keyf)=>{const m=new Map();ses.forEach(x=>{const kk=keyf(x)||'—';if(!m.has(kk))m.set(kk,[]);m.get(kk).push(x);});
+    return [...m.entries()].map(([nome,xs])=>{const r=xs.flatMap(x=>x.rs),a=xs.reduce((t,x)=>t+x.al,0),c=xs.reduce((t,x)=>t+x.custo,0);return {nome,dias:xs.length,al:a,inv:c,invAl:a?c/a:0,n:r.length,f:formCalc(r),k:npsCalc(r)};}).sort((a,b)=>b.al-a.al);};
+  const linhas=todas?grp(x=>uNome(x.s.unidade_id)):grp(x=>(x.s.curso||'').trim());
+  const vozes=[...rs].filter(r=>(r.comentario||'').trim()).sort((a,b)=>(b.nota_formacao-a.nota_formacao)||(b.created_at||'').localeCompare(a.created_at||'')).slice(0,6);
+  const fmtN=v=>v==null?'—':NUM.format(v);
+  el('av-rep').innerHTML=`
+  <article class="rep" id="rep">
+    <header class="rep-h">
+      <div class="rep-brand"><img class="itc-l" src="logo-itc.png" alt="ITC"><img class="itc-d" src="logo-itc-escuro.png" alt="ITC"><span class="sep"></span><img class="idomed" src="logo-idomed.png" alt="IDOMED"></div>
+      <div><small>Relatório semestral · aulas práticas em cadáver fresco</small><h3>${esc(titulo)}</h3><p>${semLabel(sem)} · gerado em ${new Date().toLocaleDateString('pt-BR')}</p></div>
+    </header>
+    ${ses.length?`
+    <p class="rep-lead">${f?`<b>${NUM.format(Math.round(f.alta))}%</b> dos alunos que avaliaram disseram que a aula em cadáver fresco <b>acrescentou muito</b> (nota 9 ou 10) à sua formação médica. A nota média foi <b>${NUM.format(f.media)}</b> de 10.`:'Ainda não há avaliações dos alunos neste semestre. Gere o link de avaliação nos dias de aula para medir a contribuição percebida.'}</p>
+    <div class="kpis rep-k">
+      ${kpi('Alunos atendidos',NUM.format(alunos),'lead')}
+      ${kpi('Dias de aula prática',ses.length,'')}
+      ${kpi('Investimento em material anatômico',money(inv),'warn')}
+      ${kpi('Investimento por aluno',money(invAl),'')}
+      ${kpi('Contribuição para a formação',f?NUM.format(f.media)+' <small>/10</small>':'—','accent')}
+      ${kpi('NPS da aula',k?`<span class="npsv ${npsCls(k.nps)}">${k.nps}</span>`:'—','')}
+      ${kpi('Avaliações recebidas',`${rs.length}${alAval?` <small>(${NUM.format(Math.round(rs.length/alAval*100))}% dos alunos)</small>`:''}`,'small')}
+      ${kpi('Investimento por aluno promotor (estimado)',promEst?money(inv/promEst):'—','small')}
+    </div>
+    ${k?`<div class="npsbar" aria-label="Composição do NPS"><i class="d" style="width:${k.D/k.n*100}%"></i><i class="n" style="width:${k.N/k.n*100}%"></i><i class="p" style="width:${k.P/k.n*100}%"></i></div>
+    <div class="npslg"><span><i class="d"></i>Detratores (0–6) ${k.D}</span><span><i class="n"></i>Neutros (7–8) ${k.N}</span><span><i class="p"></i>Promotores (9–10) ${k.P}</span></div>`:''}
+    <div class="grid2 mt">
+      <div class="panel"><h4>Quanto a aula acrescentou à formação</h4><div class="cap">Distribuição das notas de 0 a 10 dadas pelos alunos.</div><div class="chart-box"><canvas id="c-av-dist"></canvas></div></div>
+      <div class="panel"><h4>Investimento por aluno × contribuição percebida</h4><div class="cap">Cada ponto é ${todas?'uma unidade':'um curso ou turma'}. Mais acima e à esquerda = mais retorno por real investido.</div><div class="chart-box"><canvas id="c-av-sc"></canvas></div></div>
+    </div>
+    <div class="panel mt"><h4>Por ${todas?'unidade':'curso ou turma'}</h4>
+      <div class="tablewrap flat"><table><thead><tr><th>${todas?'Unidade':'Curso ou turma'}</th><th class="n">Dias</th><th class="n">Alunos</th><th class="n">Investimento</th><th class="n">Por aluno</th><th class="n">Avaliações</th><th class="n">Formação (0–10)</th><th class="n">NPS</th></tr></thead><tbody>
+      ${linhas.map(l=>`<tr><td>${esc(l.nome)}</td><td class="n">${l.dias}</td><td class="n">${l.al}</td><td class="n">${money(l.inv)}</td><td class="n">${money(l.invAl)}</td><td class="n">${l.n}</td><td class="n">${l.f?fmtN(l.f.media):'—'}</td><td class="n">${l.k?`<span class="npsv ${npsCls(l.k.nps)}">${l.k.nps}</span>`:'—'}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${rs.length&&rs.length<30?'<p class="foothint">Com menos de 30 avaliações, o NPS pode variar bastante de uma aula para outra. Leia os números junto com os comentários.</p>':''}
+    </div>
+    ${vozes.length?`<div class="panel mt"><h4>O que os alunos disseram</h4><div class="vozes">${vozes.map(r=>`<blockquote><p>“${esc(r.comentario.trim())}”</p><footer>Formação ${r.nota_formacao}/10 · recomendação ${r.nota_recomendacao}/10${r.nome?' · '+esc(r.nome):''}</footer></blockquote>`).join('')}</div></div>`:''}
+    <p class="foothint">Investimento em material anatômico = parte do valor das peças consumida nas aulas do semestre (depreciação por tipo de aula × alunos). Investimento por aluno promotor = investimento ÷ (alunos atendidos × % de promotores entre os que avaliaram).</p>
+    `:`<div class="empty"><b>Sem dias de aula neste semestre</b>Escolha outro semestre ou registre aulas na aba Aulas.</div>`}
+  </article>`;
+  if(ses.length){
+    const cOk=cssv('--green'),cMid=cssv('--warn'),cHot=cssv('--danger'),grid=cssv('--line'),txt=cssv('--muted');
+    const dist=Array.from({length:11},(_,i)=>rs.filter(r=>r.nota_formacao===i).length);
+    mkChart('c-av-dist',{type:'bar',data:{labels:dist.map((_,i)=>String(i)),datasets:[{data:dist,backgroundColor:dist.map((_,i)=>i>=9?cOk:i>=7?cMid:cHot),borderRadius:4,maxBarThickness:34}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' aluno(s)'}}},scales:{y:{beginAtZero:true,ticks:{color:txt,precision:0},grid:{color:grid}},x:{ticks:{color:txt},grid:{display:false},title:{display:true,text:'Nota',color:txt}}}}});
+    const pts=linhas.filter(l=>l.f&&l.al).map(l=>({x:+l.invAl.toFixed(2),y:+l.f.media.toFixed(2),nome:l.nome}));
+    mkChart('c-av-sc',{type:'scatter',data:{datasets:[{data:pts,backgroundColor:cssv('--chart-2'),pointRadius:7,pointHoverRadius:9}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw.nome}: ${money(c.raw.x)} por aluno · formação ${NUM.format(c.raw.y)}`}}},
+        scales:{x:{title:{display:true,text:'Investimento por aluno (R$)',color:txt},ticks:{color:txt,callback:v=>'R$ '+NUM.format(v)},grid:{color:grid},beginAtZero:true},y:{min:0,max:10,title:{display:true,text:'Contribuição (0–10)',color:txt},ticks:{color:txt},grid:{color:grid}}}}});
+  }
+  renderRespostas(D,ses);
+}
+function renderRespostas(D,ses){
+  const fx=el('av-filtro').value, todas=avEscopo()==='todas';
+  const sm=new Map(ses.map(x=>[x.s.id,x.s]));
+  const list=ses.flatMap(x=>x.rs).filter(r=>!fx||(fx==='p'?r.nota_recomendacao>=9:fx==='n'?r.nota_recomendacao>=7&&r.nota_recomendacao<=8:fx==='d'?r.nota_recomendacao<=6:(r.comentario||'').trim()))
+    .sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  const w=el('av-resp');
+  if(!list.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhuma resposta</b>As respostas aparecem aqui assim que os alunos enviarem a avaliação.</div></div>';return;}
+  const uN=id=>(D.unids.find(u=>u.id===id)||{}).nome||'—';
+  w.innerHTML='<div class="tablewrap"><table><thead><tr><th>Recebida</th>'+(todas?'<th>Unidade</th>':'')+'<th>Dia de aula</th><th class="n">Formação</th><th class="n">Recomendação</th><th>Comentário</th><th>Identificação</th><th></th></tr></thead><tbody>'+
+    list.map(r=>{const s=sm.get(r.sessao_id)||{},c=r.nota_recomendacao>=9?'ok':r.nota_recomendacao>=7?'mid':'hot';
+      return `<tr><td>${fmtDH(r.created_at)}</td>${todas?`<td>${esc(uN(r.unidade_id))}</td>`:''}<td>${fmtFull(s.data)}${s.curso?' · '+esc(s.curso):''}</td><td class="n"><b>${r.nota_formacao}</b></td><td class="n"><span class="pct ${c}">${r.nota_recomendacao}</span></td><td class="wrapcell">${esc(r.comentario||'')}</td><td>${r.nome||r.email?esc([r.nome,r.email].filter(Boolean).join(' · ')):'<span class="muted">anônimo</span>'}</td><td>${todas?'':`<button class="icon" title="Excluir resposta" onclick="delResposta(${r.id})">${TRASH}</button>`}</td></tr>`;}).join('')+'</tbody></table></div>';
+}
+async function delResposta(id){
+  const ok=await ask({title:'Excluir esta resposta?',body:'Use só para respostas indevidas (teste, duplicada ou fora de contexto). Ela sai do relatório.'});
+  if(!ok) return;
+  const {error}=await db.from('cadaver_nps_respostas').delete().eq('id',id);
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  respostas=respostas.filter(r=>r.id!==id); avAll=null; renderAll(); renderAval(); toast('Resposta excluída.');
+}
+function imprimirRel(){document.body.classList.add('print-av');setTimeout(()=>{window.print();setTimeout(()=>document.body.classList.remove('print-av'),300);},50);}
+function exportRespostas(){
+  const sem=el('av-sem').value, D=avEscopo()==='todas'?avAll:{unids:[cur],sessoes,respostas};
+  if(!D) return;
+  const sm=new Map(D.sessoes.map(s=>[s.id,s])), uN=id=>(D.unids.find(u=>u.id===id)||{}).nome||'';
+  const rows=D.respostas.filter(r=>semKey((sm.get(r.sessao_id)||{}).data)===sem);
+  const head=['Unidade','Data da aula','Curso ou turma','Recebida em','Formação (0-10)','Recomendação (0-10)','Categoria NPS','Comentário','Nome','E-mail'];
+  const lines=[head.join(';')];
+  rows.forEach(r=>{const s=sm.get(r.sessao_id)||{};lines.push([uN(r.unidade_id),fmtFull(s.data),s.curso||'',fmtDH(r.created_at),r.nota_formacao,r.nota_recomendacao,r.nota_recomendacao>=9?'Promotor':r.nota_recomendacao>=7?'Neutro':'Detrator',r.comentario||'',r.nome||'',r.email||''].map(x=>`"${(x??'').toString().replace(/"/g,'""')}"`).join(';'));});
+  const blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download='avaliacoes-'+sem.replace('.','-')+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);
+  toast('CSV exportado.');
 }
 
 // ================= LOGIN (Supabase Auth) =================
