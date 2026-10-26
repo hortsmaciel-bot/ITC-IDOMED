@@ -86,7 +86,7 @@
     <!-- PEÇAS -->
     <section class="tab active" id="tab-pecas">
       <div class="shead">
-        <div><h3>Peças do acervo</h3><p>Cada peça da unidade com a ficha completa, o desgaste acumulado nas aulas e o link da pasta no Drive.</p></div>
+        <div><h3>Peças do acervo</h3><p>As peças ficam agrupadas pelo código original do corpo de onde vieram. Cada segmento é uma peça própria, com ficha, desgaste e link do Drive.</p></div>
         <div class="acts-row">
           <input id="pc-busca" type="search" placeholder="Buscar código, espécimen, local…" oninput="renderPecas()" aria-label="Buscar peça">
           <button class="btn green" onclick="openPeca(null)">+ Nova peça</button>
@@ -219,6 +219,7 @@
 <div id="pmodal" class="modal" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pf-title">
     <div class="sheet-h">
+      <div class="sheet-segimg" id="pf-segimg" hidden></div>
       <div class="sheet-id">
         <h2 id="pf-title">Nova peça</h2>
         <div class="tags" id="pf-tags"></div>
@@ -226,6 +227,8 @@
       <div class="ring-wrap" id="pf-ringwrap"><div class="ring ok" id="pf-ring" style="--p:0"><span id="pf-ringv">0%</span></div><small>Σ uso</small></div>
       <button class="icon close" onclick="closePeca()" aria-label="Fechar">✕</button>
     </div>
+    <div class="sec-t">Segmento</div>
+    <div class="segpick" id="pf-seg" role="radiogroup" aria-label="Segmento da peça"></div>
     <div class="sec-t">Cadastro</div>
     <div class="pgrid" id="pf-grid"></div>
     <div class="sec-t">Links</div>

@@ -53,6 +53,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
   if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
   if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
   if(/total_alunos/.test(m)) return 'O banco ainda não tem o campo de total de alunos. Rode o script atualizacao-v3.sql no Supabase.';
@@ -247,7 +248,7 @@ function fillLists(){
   put('dl-curso',sessoes.map(s=>s.curso));
 }
 function fillSelects(){
-  const nomeP=c=>esc(cod(c))+(semFinal(c)?' (sem cód. final)':'')+(c.especime?' · '+esc(c.especime):'');
+  const nomeP=c=>esc(cod(c))+(semFinal(c)?' (sem cód. final)':'')+(segLabel(c)?' · '+esc(segLabel(c)):'');
   const optC=[...corpos].sort(byCod).map(c=>`<option value="${c.id}">${nomeP(c)}</option>`).join('');
   const optP=procs.map(p=>`<option value="${p.id}">${esc(p.nome)} (${pct(p.pct_por_aluno)}/aluno)</option>`).join('');
   const optR=sortPt(sessoes.map(s=>s.responsavel)).map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
@@ -278,36 +279,80 @@ const PF=[
   {k:'uso_inicial',l:'Uso prévio (%)',type:'number',step:'0.1',ph:'antes do sistema'},
   {k:'__res',l:'Valor residual',calc:1},
 ];
+// ---------- segmentos ----------
+const SEG={
+  corpo_inteiro:{l:'Corpo inteiro',img:'seg-corpo-inteiro.png'},
+  torso_cabeca:{l:'Torso com cabeça',img:'seg-torso-cabeca.png'},
+  membro_superior:{l:'Membro superior',img:'seg-membro-superior.png'},
+  membro_inferior:{l:'Membro inferior',img:'seg-membro-inferior.png'},
+};
+function segOf(c){
+  if(c&&SEG[c.segmento]) return c.segmento;
+  const e=((c&&c.especime)||'').toLowerCase();
+  if(/inteiro/.test(e)) return 'corpo_inteiro';
+  if(/membro sup|braço|braco|antebra|mão|mao|punho|ombro|cotovelo/.test(e)) return 'membro_superior';
+  if(/membro inf|perna|pé\b|pe\b|joelho|quadril|coxa|tornozelo/.test(e)) return 'membro_inferior';
+  if(/tronco|torso|cabe|tórax|torax|abdome|pelve|pescoço/.test(e)) return 'torso_cabeca';
+  return '';
+}
+function segThumb(c,cls=''){const k=segOf(c);return k?`<span class="segimg ${cls}" title="${SEG[k].l}"><img src="${SEG[k].img}" alt="${SEG[k].l}"></span>`:`<span class="segimg none ${cls}" title="Segmento não definido">?</span>`;}
+const segLabel=c=>{const k=segOf(c);return k?SEG[k].l:'';};
+const keyOrig=c=>(c.nome||'').trim().toUpperCase();
+let segFiltro='';
+function setSegFiltro(k){segFiltro=k;renderPecas();}
+
 function renderPecas(){
   const q=(el('pc-busca').value||'').trim().toLowerCase();
-  const list=[...corpos].sort(byCod).filter(c=>!q||[c.nome,c.codigo_final,c.especime,c.local_atual,c.processamento,c.fornecedor,c.invoice].some(v=>(v||'').toLowerCase().includes(q)));
+  const list=[...corpos].sort(byCod).filter(c=>(!segFiltro||segOf(c)===segFiltro)&&(!q||[c.nome,c.codigo_final,c.especime,c.local_atual,c.processamento,c.fornecedor,c.invoice,segLabel(c)].some(v=>(v||'').toLowerCase().includes(q))));
   const tot=corpos.reduce((s,c)=>s+Number(c.valor||0),0);
-  const esg=corpos.filter(c=>pctDoCorpo(c.id)>=100).length;
-  el('pc-resumo').innerHTML=corpos.length?`<span class="chip"><b>${corpos.length}</b> peças</span><span class="chip"><b>${money(tot)}</b> em acervo</span><span class="chip"><b>${money(corpos.reduce((s,c)=>s+residualCorpo(c),0))}</b> de valor residual</span>${esg?`<span class="chip"><b>${esg}</b> esgotada(s)</span>`:''}`:'';
+  const nOrig=new Set(corpos.map(keyOrig)).size;
+  el('pc-resumo').innerHTML=corpos.length?
+    `<button class="chip ${!segFiltro?'on':''}" onclick="setSegFiltro('')">Todas <b>${corpos.length}</b></button>`+
+    Object.entries(SEG).map(([k,v])=>{const n=corpos.filter(c=>segOf(c)===k).length;return n?`<button class="chip segchip ${segFiltro===k?'on':''}" onclick="setSegFiltro('${k}')"><img src="${v.img}" alt="">${v.l} <b>${n}</b></button>`:'';}).join('')+
+    `<span class="chip"><b>${nOrig}</b> código(s) de origem</span><span class="chip"><b>${money(tot)}</b> em acervo</span><span class="chip"><b>${money(corpos.reduce((s,c)=>s+residualCorpo(c),0))}</b> residual</span>`:'';
   const w=el('w-pecas');
-  if(!corpos.length){w.innerHTML='<div class="empty"><b>Nenhuma peça cadastrada nesta unidade</b>Clique em “+ Nova peça” para cadastrar a primeira peça do acervo.</div>';return;}
-  if(!list.length){w.innerHTML='<div class="empty"><b>Nenhuma peça encontrada</b>Nenhuma peça corresponde à busca.</div>';return;}
-  let h='<table><thead><tr><th>Código</th><th>Espécimen</th><th>Processamento</th><th>Local atual</th><th>Sexo · idade</th><th>Chegada</th><th class="n">Valor</th><th>Σ uso</th><th>Status</th><th>Drive</th></tr></thead><tbody>';
-  list.forEach(c=>{
-    const p=pctDoCorpo(c.id), lv=nivel(p);
-    h+=`<tr class="click" onclick="openPeca('${c.id}')" tabindex="0" onkeydown="if(event.key==='Enter')openPeca('${c.id}')">
-      <td><span class="code">${esc(cod(c))}</span>${semFinal(c)?'<span class="sub warn-t">sem código final</span>':`<span class="sub">original: ${esc(c.nome)}</span>`}</td>
-      <td>${esc(c.especime||'—')}</td>
-      <td>${esc(c.processamento||'—')}</td>
-      <td>${esc(c.local_atual||'—')}</td>
-      <td>${esc([c.sexo,c.idade?c.idade+' anos':''].filter(Boolean).join(' · ')||'—')}</td>
-      <td>${c.data_aquisicao?fmtFull(c.data_aquisicao):'—'}</td>
-      <td class="n">${money(c.valor)}</td>
-      <td><div class="uso"><div class="bar"><i class="${lv}" style="width:${Math.min(p,100)}%"></i></div><span class="num">${pct(p)}</span></div></td>
-      <td><span class="pill ${lv}">${rotulo(p)}</span></td>
-      <td>${c.link_drive?`<a class="drive" href="${esc(safeUrl(c.link_drive))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Abrir ↗</a>`:'<span class="muted">—</span>'}</td>
-    </tr>`;
-  });
-  w.innerHTML=h+'</tbody></table>';
+  if(!corpos.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhuma peça cadastrada nesta unidade</b>Clique em “+ Nova peça” para cadastrar o primeiro corpo do acervo. Depois, use “+ Segmento deste corpo” para registrar cada parte separada dele.</div></div>';return;}
+  if(!list.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhuma peça encontrada</b>Nenhuma peça corresponde à busca ou ao filtro.</div></div>';return;}
+  const grupos=new Map();
+  list.forEach(c=>{const k=keyOrig(c);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(c);});
+  const ordem=[...grupos.entries()].sort((a,b)=>a[0].localeCompare(b[0],'pt-BR',{numeric:true}));
+  const ORD=['corpo_inteiro','torso_cabeca','membro_superior','membro_inferior',''];
+  w.innerHTML=ordem.map(([k,ls])=>{
+    const todos=corpos.filter(c=>keyOrig(c)===k), f=todos[0];
+    ls.sort((a,b)=>ORD.indexOf(segOf(a))-ORD.indexOf(segOf(b))||byCod(a,b));
+    const vt=todos.reduce((s,c)=>s+Number(c.valor||0),0), rt=todos.reduce((s,c)=>s+residualCorpo(c),0);
+    const meta=[f.fornecedor,[f.sexo==='F'?'♀ Fem.':f.sexo==='M'?'♂ Masc.':'',f.idade?f.idade+' anos':''].filter(Boolean).join(' · '),f.etnia,f.data_aquisicao?'chegou em '+fmtFull(f.data_aquisicao):'',f.invoice?'invoice '+f.invoice:''].filter(Boolean);
+    return `<section class="orig">
+      <header class="orig-h">
+        <div class="orig-id"><small>Código original</small><b>${esc(f.nome||'—')}</b>${meta.length?`<span class="orig-meta">${esc(meta.join(' · '))}</span>`:''}</div>
+        <div class="orig-sum"><span><b>${todos.length}</b> ${todos.length===1?'peça':'peças'}</span><span><b>${money(vt)}</b> valor</span><span><b>${money(rt)}</b> residual</span></div>
+        <button class="btn ghost sm" onclick="novoSegmento('${esc(f.id)}')">+ Segmento deste corpo</button>
+      </header>
+      <div class="tablewrap flat"><table><thead><tr><th class="th-img"><span class="sr">Segmento</span></th><th>Código final</th><th>Segmento</th><th>Espécimen</th><th>Processamento</th><th>Local atual</th><th class="n">Valor</th><th>Σ uso</th><th>Status</th><th>Drive</th></tr></thead><tbody>`+
+      ls.map(c=>{const p=pctDoCorpo(c.id), lv=nivel(p);
+        return `<tr class="click" onclick="openPeca('${c.id}')" tabindex="0" onkeydown="if(event.key==='Enter')openPeca('${c.id}')">
+          <td class="td-img">${segThumb(c)}</td>
+          <td><span class="code">${esc(cod(c))}</span>${semFinal(c)?'<span class="sub warn-t">sem código final</span>':''}</td>
+          <td>${esc(segLabel(c)||'—')}</td>
+          <td>${esc(c.especime||'—')}</td>
+          <td>${esc(c.processamento||'—')}</td>
+          <td>${esc(c.local_atual||'—')}</td>
+          <td class="n">${money(c.valor)}</td>
+          <td><div class="uso"><div class="bar"><i class="${lv}" style="width:${Math.min(p,100)}%"></i></div><span class="num">${pct(p)}</span></div></td>
+          <td><span class="pill ${lv}">${rotulo(p)}</span></td>
+          <td>${c.link_drive?`<a class="drive" href="${esc(safeUrl(c.link_drive))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Abrir ↗</a>`:'<span class="muted">—</span>'}</td>
+        </tr>`;}).join('')+`</tbody></table></div></section>`;
+  }).join('');
+}
+function novoSegmento(id){
+  const f=corpoById(id); if(!f) return;
+  const pre={}; ['nome','fornecedor','sexo','idade','etnia','data_aquisicao','invoice','processamento','local_atual'].forEach(k=>pre[k]=f[k]);
+  openPeca(null,pre);
 }
 function safeUrl(u){u=(u||'').trim();if(!u)return'';if(!/^https?:\/\//i.test(u))u='https://'+u;return u;}
-function openPeca(id){
-  curPeca=id; const c=id?corpoById(id):{};
+function openPeca(id,pre){
+  curPeca=id; const c=id?corpoById(id):(pre||{});
+  pickSeg(id?segOf(c):'');
   el('pf-grid').innerHTML=PF.map(f=>{
     if(f.calc) return `<div class="field"><label>${f.l}</label><div class="calcv" id="pf-${f.k}">—</div></div>`;
     const v=c[f.k]??'';
@@ -321,11 +366,19 @@ function openPeca(id){
   el('pf-link_drive').oninput=updDrive; updDrive();
   const tit=()=>{el('pf-title').textContent=el('pf-codigo_final').value.trim()||el('pf-nome').value.trim()||'Nova peça';};
   el('pf-nome').oninput=tit; el('pf-codigo_final').oninput=tit;
-  el('pf-title').textContent=id?cod(c):'Nova peça';
+  if(pre) el('pf-codigo_final').oninput=()=>{el('pf-title').textContent=el('pf-codigo_final').value.trim()||'Novo segmento de '+(pre.nome||'');};
+  el('pf-title').textContent=id?cod(c):pre?'Novo segmento de '+(pre.nome||''):'Nova peça';
   fillPecaCalc();
   el('pmodal').hidden=false; el('pmodal').scrollTop=0;
   document.body.style.overflow='hidden';
   setTimeout(()=>el('pf-codigo_final').focus(),30);
+}
+let pfSeg='';
+function pickSeg(k){
+  pfSeg=k||'';
+  el('pf-seg').innerHTML=Object.entries(SEG).map(([key,v])=>`<button type="button" role="radio" aria-checked="${pfSeg===key}" class="segopt ${pfSeg===key?'on':''}" onclick="pickSeg('${key}')"><img src="${v.img}" alt=""><span>${v.l}</span></button>`).join('');
+  const hi=el('pf-segimg'); if(hi) hi.innerHTML=pfSeg?`<img src="${SEG[pfSeg].img}" alt="${SEG[pfSeg].l}">`:'';
+  if(hi) hi.hidden=!pfSeg;
 }
 function updDrive(){const u=safeUrl(el('pf-link_drive').value);const a=el('pf-drive-open');a.hidden=!u;if(u)a.href=u;}
 function fillPecaCalc(){
@@ -356,6 +409,8 @@ async function savePeca(){
     row[f.k]=v;
   });
   row.link_drive=el('pf-link_drive').value.trim()?safeUrl(el('pf-link_drive').value):null;
+  row.segmento=pfSeg||null;
+  if(!row.segmento){toast('Escolha o segmento da peça (corpo inteiro, torso, membro superior ou inferior).',true);return;}
   if(!row.nome){toast('Preencha o código original da peça.',true);el('pf-nome').focus();return;}
   row.valor=row.valor||0; row.uso_inicial=Math.min(Math.max(row.uso_inicial||0,0),100);
   if(row.idade!=null) row.idade=Math.round(row.idade);
@@ -394,7 +449,7 @@ function linePrev(l){
   return {html:`<b>${money(custo)}</b> · ${pct(ap)}${dep>rest+1e-9?' (peça esgota)':''}`,custo,warn:dep>rest+1e-9};
 }
 function renderLines(){
-  const optC=[...corpos].sort(byCod).map(c=>[c.id,cod(c)+(semFinal(c)?' (sem cód. final)':'')+(c.especime?' · '+c.especime:'')+(pctDoCorpo(c.id)>=100?' (esgotada)':'')]);
+  const optC=[...corpos].sort(byCod).map(c=>[c.id,cod(c)+(semFinal(c)?' (sem cód. final)':'')+(segLabel(c)?' · '+segLabel(c):'')+(c.especime&&c.especime!==segLabel(c)?' · '+c.especime:'')+(pctDoCorpo(c.id)>=100?' (esgotada)':'')]);
   const optP=procs.map(p=>[p.id,`${p.nome} (${pct(p.pct_por_aluno)}/aluno)`]);
   const sel=(opts,v,ph)=>`<option value="">${ph}</option>`+opts.map(([id,t])=>`<option value="${id}" ${id===v?'selected':''}>${esc(t)}</option>`).join('');
   el('ns-lines').innerHTML=(!corpos.length||!procs.length)?`<div class="warnbox">${!corpos.length?'Cadastre as peças na aba <b>Peças</b>':''}${!corpos.length&&!procs.length?' e ':''}${!procs.length?(corpos.length?'Cadastre ':'')+'os tipos de aula na aba <b>Depreciação</b>':''} para poder registrar aulas.</div>`:
@@ -453,7 +508,7 @@ function renderAulas(){
 function sessCard(s,ls){
   const [y,m,d]=(s.data||'----').split('-'); const dt=s.data?new Date(s.data+'T12:00'):null;
   const tot=ls.reduce((t,a)=>t+custoAula(a),0), al=ls.reduce((t,a)=>Math.max(t,Number(a.num_alunos||0)),0);
-  const optC=[...corpos].sort(byCod).map(c=>`<option value="${c.id}">${esc(cod(c))}${c.especime?' · '+esc(c.especime):''}</option>`).join('');
+  const optC=[...corpos].sort(byCod).map(c=>`<option value="${c.id}">${esc(cod(c))}${segLabel(c)?' · '+esc(segLabel(c)):''}</option>`).join('');
   const optP=procs.map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('');
   return `<article class="sess">
     <div class="sess-h">
@@ -805,7 +860,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(c
 // ================= HISTÓRICO =================
 let hist=[], histFim=true;
 const ENT={cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
-const LBL={codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+const LBL={segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
   sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
   pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
   total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
@@ -842,6 +897,7 @@ function fmtVal(k,v){
   if(k==='sessao_id'){const s=sessById(v);return s?fmtFull(s.data):'—';}
   if(k==='data'||k==='data_aquisicao') return fmtFull(String(v));
   if(k==='valor') return money(Number(v));
+  if(k==='segmento') return SEG[v]?SEG[v].l:String(v);
   return String(v);
 }
 function difs(h){
