@@ -53,6 +53,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/cadaver_agenda|pecas_previstas|alunos_previstos/.test(m)) return 'O calendário ainda não foi ativado. Rode o script atualizacao-v9-calendario.sql no Supabase.';
   if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
   if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
   if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
@@ -166,7 +167,7 @@ async function openUnit(id){
   el('ns-data').value=today(); el('ax-file').value=''; anexoFiltro='';
   lines=[newLine()];
   showTab('pecas');
-  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];respostas=[];avAll=null; renderAll();
+  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];respostas=[];agenda=[];avAll=null;calInit(); renderAll();
   const {error}=await load();
   if(error){toast('Erro ao carregar: '+errMsg(error),true);}
   if(cur&&cur.id===id) renderAll();
@@ -179,6 +180,7 @@ function showTab(t){
   if(t==='rel'){ renderDash(); renderRel(); }
   if(t==='hist') loadHist();
   if(t==='aval') renderAval();
+  if(t==='cal') renderCal();
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
@@ -217,13 +219,14 @@ function rotulo(p){const lv=nivel(p);return p>=100?'esgotada':lv==='hot'?'quase 
 // ---------- carga ----------
 async function load(){
   const uid=cur.id;
-  const [r1,r2,r3,r4,r5,r6]=await Promise.all([
+  const [r1,r2,r3,r4,r5,r6,r7]=await Promise.all([
     db.from('cadaver_corpos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_procedimentos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_aulas').select('*').eq('unidade_id',uid).order('data'),
     db.from('cadaver_sessoes').select('*').eq('unidade_id',uid).order('data',{ascending:false}),
     db.from('cadaver_anexos').select('*').eq('unidade_id',uid).order('created_at',{ascending:false}),
-    db.from('cadaver_nps_respostas').select('*').eq('unidade_id',uid).order('created_at',{ascending:false})
+    db.from('cadaver_nps_respostas').select('*').eq('unidade_id',uid).order('created_at',{ascending:false}),
+    db.from('cadaver_agenda').select('*').eq('unidade_id',uid).order('data')
   ]);
   if(!cur||cur.id!==uid) return {};
   const e=r1.error||r2.error||r3.error;
@@ -231,6 +234,7 @@ async function load(){
   corpos=r1.data||[]; procs=r2.data||[]; aulas=r3.data||[];
   sessoes=r4.error?[]:(r4.data||[]); anexos=r5.error?[]:(r5.data||[]);
   respostas=r6.error?[]:(r6.data||[]); respErr=r6.error||null; avAll=null;
+  agenda=r7.error?[]:(r7.data||[]); agendaErr=r7.error||null;
   await signAnexos();
   if(r4.error||r5.error) return {error:r4.error||r5.error};
   return {};
@@ -240,6 +244,7 @@ function renderAll(){
   recompute(); fillLists(); fillSelects();
   renderPecas(); renderLines(); renderAulas(); renderAnexos(); renderProcs(); renderSim();
   if(el('tab-rel').classList.contains('active')){ renderDash(); renderRel(); }
+  if(el('tab-cal').classList.contains('active')) renderCal();
   if(!el('pmodal').hidden && curPeca && corpoById(curPeca)) fillPecaCalc();
 }
 function fillLists(){
@@ -492,6 +497,7 @@ async function saveDia(){
   const r=await db.from('cadaver_aulas').insert(rows).select();
   if(r.error){await db.from('cadaver_sessoes').delete().eq('id',s.id);toast('Erro: '+errMsg(r.error),true);return;}
   sessoes.unshift(s); aulas.push(...r.data);
+  if(agLancar){const ag=agById(agLancar);if(ag&&ag.data===data){const u=await db.from('cadaver_agenda').update({status:'realizada'}).eq('id',agLancar);if(!u.error)ag.status='realizada';}agLancar=null;}
   lines=[newLine()]; el('ns-curso').value=''; el('ns-obs').value=''; el('ns-alunos').value='';
   renderAll(); toast('Dia de aula salvo com '+r.data.length+' peça(s).');
 }
@@ -865,8 +871,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(c
 
 // ================= HISTÓRICO =================
 let hist=[], histFim=true;
-const ENT={cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
-const LBL={nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+const ENT={cadaver_agenda:'a aula programada de',cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
+const LBL={hora_inicio:'Início',hora_fim:'Término',alunos_previstos:'Alunos previstos',pecas_previstas:'Peças previstas',status:'Situação',nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
   sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
   pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
   total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
@@ -893,6 +899,7 @@ function nomeReg(h){
     case 'cadaver_sessoes': return fmtFull(r.data)+(r.curso?' · '+r.curso:'');
     case 'cadaver_aulas': { const c=corpoById(r.corpo_id); return (c?cod(c):'peça excluída')+' em '+fmtFull(r.data); }
     case 'cadaver_anexos': return r.titulo||'—';
+    case 'cadaver_agenda': return fmtFull(r.data)+(r.curso?' · '+r.curso:'');
   }
   return '—';
 }
@@ -903,6 +910,9 @@ function fmtVal(k,v){
   if(k==='sessao_id'){const s=sessById(v);return s?fmtFull(s.data):'—';}
   if(k==='data'||k==='data_aquisicao') return fmtFull(String(v));
   if(k==='valor') return money(Number(v));
+  if(k==='pecas_previstas') return Array.isArray(v)&&v.length?v.map(id=>{const c=corpoById(id);return c?cod(c):'peça excluída';}).join(', '):'nenhuma';
+  if(k==='status') return ST[v]||String(v);
+  if(k==='hora_inicio'||k==='hora_fim') return hhmm(v);
   if(k==='nps_aberto_ate') return fmtDH(String(v));
   if(k==='segmento') return SEG[v]?SEG[v].l:String(v);
   return String(v);
@@ -947,6 +957,143 @@ function renderHist(){
     return `<div class="hi"><span class="av ${h.acao}">${esc(ini)}</span>
       <div class="hb"><div class="hl"><b>${esc(nm)}</b> ${h.acao} ${ENT[h.tabela]||'um registro'} <b>${esc(nomeReg(h))}</b></div>${det?`<ul class="hd">${det}</ul>`:''}</div>
       <time datetime="${esc(h.quando)}">${new Date(h.quando).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></div>`;}).join('')+'</div></div>').join('');
+}
+
+// ================= CALENDÁRIO (aulas programadas — só planejamento, fora das estatísticas) =================
+let agenda=[], agendaErr=null, calMes=null, calDia=null, agEdit=null, agPecas=new Set(), agLancar=null;
+const ST={programada:'Programada',realizada:'Realizada',cancelada:'Cancelada'};
+const DOWL=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const MESL=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const hhmm=t=>t?String(t).slice(0,5):'';
+const agById=id=>agenda.find(a=>a.id===id);
+const agDoDia=d=>agenda.filter(a=>a.data===d).sort((x,y)=>(hhmm(x.hora_inicio)||'99').localeCompare(hhmm(y.hora_inicio)||'99'));
+function isoDe(dt){return dt.toLocaleDateString('sv');}
+function calInit(){const t=new Date();calMes=new Date(t.getFullYear(),t.getMonth(),1);calDia=today();}
+function calNav(n){if(n===0){calInit();}else{calMes=new Date(calMes.getFullYear(),calMes.getMonth()+n,1);}renderCal();}
+function calSel(d){calDia=d;renderCal();}
+function renderCal(){
+  if(!cur) return;
+  if(!calMes) calInit();
+  if(agendaErr){el('cal-wrap').innerHTML=`<div class="warnbox">${esc(errMsg(agendaErr))}</div>`;return;}
+  const y=calMes.getFullYear(), m=calMes.getMonth();
+  el('cal-mes').textContent=MESL[m][0].toUpperCase()+MESL[m].slice(1)+' de '+y;
+  const ini=new Date(y,m,1), off=ini.getDay(), dias=new Date(y,m+1,0).getDate();
+  const cells=[]; const hoje=today();
+  for(let i=0;i<42;i++){
+    const dt=new Date(y,m,1-off+i), d=isoDe(dt), out=dt.getMonth()!==m;
+    if(i>=35&&out&&cells.length%7===0) break;
+    const evs=agDoDia(d);
+    cells.push(`<button type="button" class="cd ${out?'out':''} ${d===hoje?'hoje':''} ${d===calDia?'sel':''}" onclick="calSel('${d}')" aria-label="${dt.getDate()} de ${MESL[dt.getMonth()]}${evs.length?', '+evs.length+' aula(s) programada(s)':''}">
+      <span class="dn">${dt.getDate()}</span>
+      <span class="evs">${evs.slice(0,3).map(a=>`<span class="ev ${a.status}">${hhmm(a.hora_inicio)?`<b>${hhmm(a.hora_inicio)}</b> `:''}${esc(a.curso||'Aula')}</span>`).join('')}${evs.length>3?`<span class="more">+${evs.length-3}</span>`:''}</span>
+      ${evs.length?`<span class="dots">${evs.map(a=>`<i class="${a.status}"></i>`).join('')}</span>`:''}
+    </button>`);
+  }
+  el('cal-grid').innerHTML=DOWL.map(d=>`<div class="cw">${d}</div>`).join('')+cells.join('');
+  const doMes=agenda.filter(a=>a.data&&a.data.slice(0,7)===`${y}-${String(m+1).padStart(2,'0')}`&&a.status!=='cancelada');
+  el('cal-resumo').innerHTML=`<span class="chip"><b>${doMes.length}</b> aula(s) programada(s) no mês</span><span class="chip"><b>${NUM.format(doMes.reduce((t,a)=>t+(Number(a.alunos_previstos)||0),0))}</b> alunos previstos</span><span class="chip"><b>${new Set(doMes.flatMap(a=>a.pecas_previstas||[])).size}</b> peças previstas</span>`;
+  renderCalDia(); renderProximas();
+}
+function pecaChipMini(id){const c=corpoById(id);if(!c)return '<span class="pchip off">peça excluída</span>';const p=pctDoCorpo(c.id);return `<span class="pchip ${p>=100?'hot':p>=90?'mid':''}" title="${esc(segLabel(c))} · Σ uso ${pct(p)}">${segThumb(c,'xs')}${esc(cod(c))}${p>=100?' · esgotada':''}</span>`;}
+function conflitos(a){
+  // mesma peça prevista em outra aula do mesmo dia
+  const outros=agenda.filter(x=>x.id!==a.id&&x.data===a.data&&x.status!=='cancelada');
+  return (a.pecas_previstas||[]).filter(id=>outros.some(o=>(o.pecas_previstas||[]).includes(id)));
+}
+function agCard(a,showDate){
+  const p=procById(a.procedimento_id), cf=a.status!=='cancelada'?conflitos(a):[];
+  const esg=(a.pecas_previstas||[]).filter(id=>{const c=corpoById(id);return c&&pctDoCorpo(c.id)>=100;});
+  return `<article class="ag ${a.status}">
+    <div class="ag-t">${showDate?`<span class="ag-d">${fmtFull(a.data)}</span>`:''}<span class="ag-h">${hhmm(a.hora_inicio)||'—'}${hhmm(a.hora_fim)?' – '+hhmm(a.hora_fim):''}</span><span class="pill st-${a.status}">${ST[a.status]}</span></div>
+    <h4>${esc(a.curso||'Aula sem curso definido')}</h4>
+    <div class="ag-m">${[p?p.nome:'',a.alunos_previstos!=null?`${a.alunos_previstos} aluno(s) previsto(s)`:'',a.responsavel?'resp.: '+a.responsavel:''].filter(Boolean).map(esc).join(' · ')}</div>
+    ${(a.pecas_previstas||[]).length?`<div class="ag-p">${a.pecas_previstas.map(pecaChipMini).join('')}</div>`:'<div class="ag-m muted">Nenhuma peça prevista.</div>'}
+    ${a.observacao?`<p class="ag-o">${esc(a.observacao)}</p>`:''}
+    ${cf.length?`<div class="ag-w">A peça ${cf.map(id=>esc(cod(corpoById(id)))).join(', ')} também está prevista em outra aula neste dia.</div>`:''}
+    ${esg.length&&a.status==='programada'?`<div class="ag-w">Peça esgotada prevista: ${esg.map(id=>esc(cod(corpoById(id)))).join(', ')}.</div>`:''}
+    <div class="ag-a">
+      <button class="btn ghost sm" onclick="agAbrir('${a.id}')">Editar</button>
+      ${a.status==='programada'?`<button class="btn ghost sm" onclick="agLancarAula('${a.id}')">Lançar como realizada</button>`:''}
+      <span class="grow"></span>
+      <button class="icon" title="Excluir aula programada" onclick="agExcluir('${a.id}')">${TRASH}</button>
+    </div>
+  </article>`;
+}
+function renderCalDia(){
+  const d=calDia, evs=agDoDia(d), dt=new Date(d+'T12:00');
+  const lb=dt.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}); el('cal-dia-t').textContent=lb[0].toUpperCase()+lb.slice(1);
+  el('cal-dia').innerHTML=evs.length?evs.map(a=>agCard(a,false)).join(''):'<div class="empty"><b>Nada programado neste dia</b>Clique em “+ Programar aula” para planejar.</div>';
+}
+function renderProximas(){
+  const h=today(), prox=agenda.filter(a=>a.data>=h&&a.status==='programada').sort((x,y)=>(x.data+(hhmm(x.hora_inicio)||'99')).localeCompare(y.data+(hhmm(y.hora_inicio)||'99'))).slice(0,8);
+  el('cal-prox').innerHTML=prox.length?prox.map(a=>`<button type="button" class="px" onclick="calIr('${a.data}')"><span class="px-d"><b>${a.data.slice(8)}</b>${MESL[+a.data.slice(5,7)-1].slice(0,3)}</span><span class="px-b"><b>${esc(a.curso||'Aula')}</b><span>${[hhmm(a.hora_inicio),a.alunos_previstos!=null?a.alunos_previstos+' alunos':'',(a.pecas_previstas||[]).length+' peça(s)'].filter(Boolean).join(' · ')}</span></span></button>`).join(''):'<p class="muted" style="margin:0">Nenhuma aula programada a partir de hoje.</p>';
+}
+function calIr(d){const [y,m]=d.split('-');calMes=new Date(+y,+m-1,1);calDia=d;renderCal();}
+
+// ---------- formulário ----------
+function agAbrir(id,dia){
+  agEdit=id||null; const a=id?agById(id):{data:dia||calDia||today(),status:'programada',pecas_previstas:[]};
+  el('ag-title').textContent=id?'Editar aula programada':'Programar aula';
+  el('ag-data').value=a.data||''; el('ag-ini').value=hhmm(a.hora_inicio); el('ag-fim').value=hhmm(a.hora_fim);
+  el('ag-curso').value=a.curso||''; el('ag-alunos').value=a.alunos_previstos??''; el('ag-resp').value=a.responsavel||'';
+  el('ag-obs').value=a.observacao||''; el('ag-status').value=a.status||'programada';
+  el('ag-proc').innerHTML='<option value="">—</option>'+procs.map(p=>`<option value="${p.id}" ${p.id===a.procedimento_id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  agPecas=new Set(a.pecas_previstas||[]); el('ag-busca').value='';
+  renderAgPecas();
+  el('ag-del').hidden=!id;
+  el('agmodal').hidden=false; document.body.style.overflow='hidden';
+  setTimeout(()=>el('ag-curso').focus(),30);
+}
+function agFechar(){el('agmodal').hidden=true;document.body.style.overflow='';}
+function agTogglePeca(id){agPecas.has(id)?agPecas.delete(id):agPecas.add(id);renderAgPecas();}
+function renderAgPecas(){
+  const q=(el('ag-busca').value||'').trim().toLowerCase();
+  const list=[...corpos].sort(byCod).filter(c=>!q||[cod(c),c.nome,segLabel(c),c.especime].some(v=>(v||'').toLowerCase().includes(q)));
+  el('ag-pn').textContent=agPecas.size?`${agPecas.size} selecionada(s)`:'nenhuma selecionada';
+  el('ag-pecas').innerHTML=corpos.length?list.map(c=>{const p=pctDoCorpo(c.id),on=agPecas.has(c.id);
+    return `<button type="button" role="checkbox" aria-checked="${on}" class="pk ${on?'on':''}" onclick="agTogglePeca('${c.id}')">${segThumb(c,'xs')}<span class="pk-b"><b>${esc(cod(c))}</b><span>${esc(segLabel(c)||'—')} · Σ uso ${pct(p)}${p>=100?' · esgotada':''}</span></span><span class="pk-c">${on?'✓':''}</span></button>`;}).join('')||'<p class="muted">Nenhuma peça encontrada.</p>'
+    :'<p class="muted">Cadastre as peças na aba Peças para poder prevê-las.</p>';
+}
+async function agSalvar(){
+  const data=el('ag-data').value;
+  if(!data){toast('Informe a data da aula programada.',true);return;}
+  const ini=el('ag-ini').value||null, fim=el('ag-fim').value||null;
+  if(ini&&fim&&fim<=ini){toast('O horário de término precisa ser depois do início.',true);return;}
+  const al=el('ag-alunos').value;
+  const row={data,hora_inicio:ini,hora_fim:fim,curso:el('ag-curso').value.trim()||null,procedimento_id:el('ag-proc').value||null,
+    alunos_previstos:al===''?null:Math.max(0,parseInt(al)),pecas_previstas:[...agPecas],responsavel:el('ag-resp').value.trim()||null,
+    observacao:el('ag-obs').value.trim()||null,status:el('ag-status').value};
+  if(agEdit){
+    const {error}=await db.from('cadaver_agenda').update(row).eq('id',agEdit);
+    if(error){toast('Erro: '+errMsg(error),true);return;}
+    Object.assign(agById(agEdit),row); toast('Aula programada atualizada.');
+  }else{
+    row.unidade_id=cur.id;
+    const {data:d,error}=await db.from('cadaver_agenda').insert(row).select().single();
+    if(error){toast('Erro: '+errMsg(error),true);return;}
+    agenda.push(d); toast('Aula programada.');
+  }
+  agFechar(); calIr(data);
+}
+async function agExcluir(id){
+  id=id||agEdit; const a=agById(id); if(!a) return;
+  const ok=await ask({title:'Excluir esta aula programada?',body:`${fmtFull(a.data)}${a.curso?' · '+esc(a.curso):''}. Isso não altera nenhuma aula já registrada.`});
+  if(!ok) return;
+  const {error}=await db.from('cadaver_agenda').delete().eq('id',id);
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  agenda=agenda.filter(x=>x.id!==id); agFechar(); renderCal(); toast('Aula programada excluída.');
+}
+// Leva os dados previstos para o formulário da aba Aulas (só entra nas estatísticas depois de salvo lá)
+function agLancarAula(id){
+  const a=agById(id); if(!a) return;
+  agLancar=id;
+  el('ns-data').value=a.data; el('ns-curso').value=a.curso||''; el('ns-alunos').value=a.alunos_previstos??'';
+  if(a.responsavel) el('ns-resp').value=a.responsavel;
+  el('ns-obs').value=a.observacao||'';
+  const ids=(a.pecas_previstas||[]).filter(x=>corpoById(x));
+  lines=ids.length?ids.map(cid=>({corpo:cid,proc:a.procedimento_id||'',alunos:''})):[newLine()];
+  showTab('aulas'); renderLines(); window.scrollTo({top:0,behavior:'smooth'});
+  toast('Dados da programação copiados. Confira os alunos de cada peça e salve.');
 }
 
 // ================= AVALIAÇÕES (NPS dos alunos) =================

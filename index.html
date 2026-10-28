@@ -75,6 +75,7 @@
     <nav class="tabs" aria-label="Seções da unidade">
       <button class="active" data-tab="pecas">Peças</button>
       <button data-tab="aulas">Aulas</button>
+      <button data-tab="cal">Calendário</button>
       <button data-tab="anexos">Anexos</button>
       <button data-tab="prem">Depreciação</button>
       <button data-tab="rel">Relatórios</button>
@@ -122,6 +123,32 @@
 
       <div id="w-aulas"></div>
       <p class="foothint">Custo de cada peça = valor da peça × depreciação. Quando a peça chega a 100%, os usos seguintes não geram custo e aparecem marcados como esgotado.</p>
+    </section>
+
+    <!-- CALENDÁRIO -->
+    <section class="tab" id="tab-cal">
+      <div class="shead"><div><h3>Calendário</h3><p>Planejamento das aulas da unidade: data, horário, peças previstas e alunos previstos. É só organização interna: nada daqui entra nos custos, relatórios ou avaliações.</p></div>
+        <div class="acts-row"><button class="btn green" onclick="agAbrir(null)">+ Programar aula</button></div></div>
+      <div class="chips" id="cal-resumo"></div>
+      <div class="cal-wrap" id="cal-wrap">
+        <div class="cal-main">
+          <div class="cal-nav">
+            <button class="icon" onclick="calNav(-1)" aria-label="Mês anterior">‹</button>
+            <h4 id="cal-mes"></h4>
+            <button class="icon" onclick="calNav(1)" aria-label="Próximo mês">›</button>
+            <button class="btn ghost sm" onclick="calNav(0)">Hoje</button>
+            <span class="grow"></span>
+            <span class="cal-lg"><i class="programada"></i>Programada<i class="realizada"></i>Realizada<i class="cancelada"></i>Cancelada</span>
+          </div>
+          <div class="cal-grid" id="cal-grid"></div>
+        </div>
+        <aside class="cal-side">
+          <div class="cal-dia-h"><h4 id="cal-dia-t"></h4><button class="btn ghost sm" onclick="agAbrir(null,calDia)">+ Programar aula</button></div>
+          <div id="cal-dia"></div>
+          <h4 class="cal-px-t">Próximas aulas programadas</h4>
+          <div id="cal-prox"></div>
+        </aside>
+      </div>
     </section>
 
     <!-- ANEXOS -->
@@ -224,7 +251,7 @@
       <div class="toolbar">
         <div class="field"><label for="h-user">Pessoa</label><select id="h-user" onchange="renderHist()"></select></div>
         <div class="field"><label for="h-tipo">Assunto</label><select id="h-tipo" onchange="renderHist()">
-          <option value="">Tudo</option><option value="cadaver_corpos">Peças</option><option value="aulas">Aulas</option><option value="cadaver_anexos">Anexos</option><option value="cadaver_procedimentos">Tipos de aula</option><option value="cadaver_unidades">Unidade</option></select></div>
+          <option value="">Tudo</option><option value="cadaver_corpos">Peças</option><option value="aulas">Aulas</option><option value="cadaver_anexos">Anexos</option><option value="cadaver_procedimentos">Tipos de aula</option><option value="cadaver_agenda">Calendário</option><option value="cadaver_unidades">Unidade</option></select></div>
         <div class="field"><label for="h-acao">Ação</label><select id="h-acao" onchange="renderHist()"><option value="">Todas</option><option value="criou">Criou</option><option value="alterou">Alterou</option><option value="excluiu">Excluiu</option></select></div>
         <div class="field"><label for="h-busca">Buscar</label><input id="h-busca" type="search" placeholder="código, nome, valor…" oninput="renderHist()"></div>
       </div>
@@ -272,6 +299,35 @@
 <!-- listas de sugestões -->
 <datalist id="dl-especime"></datalist><datalist id="dl-local"></datalist><datalist id="dl-proc"></datalist>
 <datalist id="dl-forn"></datalist><datalist id="dl-etnia"></datalist><datalist id="dl-resp"></datalist><datalist id="dl-curso"></datalist>
+
+<!-- aula programada -->
+<div id="agmodal" class="modal" hidden onclick="if(event.target===this)agFechar()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ag-title">
+    <div class="sheet-h"><div class="sheet-id"><h2 id="ag-title">Programar aula</h2><div class="tags"><span class="tag n">Planejamento · não entra nas estatísticas</span></div></div><button class="icon close" onclick="agFechar()" aria-label="Fechar">✕</button></div>
+    <div class="frow">
+      <div class="field"><label for="ag-data">Data</label><input id="ag-data" type="date"></div>
+      <div class="field"><label for="ag-ini">Início</label><input id="ag-ini" type="time"></div>
+      <div class="field"><label for="ag-fim">Término</label><input id="ag-fim" type="time"></div>
+      <div class="field"><label for="ag-status">Situação</label><select id="ag-status"><option value="programada">Programada</option><option value="realizada">Realizada</option><option value="cancelada">Cancelada</option></select></div>
+    </div>
+    <div class="frow">
+      <div class="field"><label for="ag-curso">Curso ou turma</label><input id="ag-curso" list="dl-curso" placeholder="ex.: Anatomia Cirúrgica – 3º período"></div>
+      <div class="field"><label for="ag-proc">Tipo de aula previsto</label><select id="ag-proc"></select></div>
+      <div class="field"><label for="ag-alunos">Alunos previstos</label><input id="ag-alunos" type="number" min="0" step="1"></div>
+      <div class="field"><label for="ag-resp">Responsável previsto</label><input id="ag-resp" list="dl-resp" placeholder="opcional"></div>
+    </div>
+    <div class="sec-t">Peças previstas <span class="muted" id="ag-pn" style="text-transform:none;letter-spacing:0;font-weight:500"></span></div>
+    <input id="ag-busca" type="search" placeholder="Buscar peça por código ou segmento" oninput="renderAgPecas()" aria-label="Buscar peça">
+    <div class="pkgrid" id="ag-pecas"></div>
+    <div class="field"><label for="ag-obs">Observações</label><input id="ag-obs" placeholder="opcional"></div>
+    <div class="sheet-f">
+      <button class="btn ghost danger-t" id="ag-del" onclick="agExcluir()">Excluir</button>
+      <span class="grow"></span>
+      <button class="btn ghost" onclick="agFechar()">Cancelar</button>
+      <button class="btn green" onclick="agSalvar()">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <!-- QR Code da avaliação -->
 <div id="qmodal" class="modal" hidden onclick="if(event.target===this)fecharQR()">
