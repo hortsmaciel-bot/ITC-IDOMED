@@ -299,7 +299,8 @@ a.drive:hover{background:var(--green-soft)}
 .dbadge b{display:block;font:800 24px/1 var(--f-display);font-variant-numeric:tabular-nums}
 .dbadge span{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--band-muted)}
 .dbadge input{all:unset;width:100%;font-size:11px;color:var(--band-muted);cursor:pointer;margin-top:4px;text-align:center}
-.sess-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1.2fr)) minmax(0,.7fr) minmax(0,1.4fr);gap:8px}
+.sess-meta{display:grid;grid-template-columns:minmax(0,.95fr) repeat(2,minmax(0,1.15fr)) minmax(0,.65fr) minmax(0,1.3fr);gap:8px}
+@media (max-width:1100px){.sess-meta{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .sess-sum b.al{font:700 13px/1 var(--f-body);color:var(--ink)}
 .sess-meta .field label{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
 .sess-meta input{padding:6px 9px;font-size:13.5px}
@@ -590,3 +591,4 @@ td.wrapcell{white-space:normal;min-width:240px;max-width:420px}
 .ag-tp{display:flex;flex-wrap:wrap;gap:5px}
 .tpchip{font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--teal-soft);color:var(--teal-tx)}
 #agmodal .frow:nth-of-type(2){grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+@media (max-width:640px){.sess-meta{grid-template-columns:1fr}}

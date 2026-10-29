@@ -525,8 +525,9 @@ function sessCard(s,ls){
   return `<article class="sess">
     <div class="sess-h">
       <div class="dbadge"><b>${d||'—'}</b><span>${dt?MESES[+m-1]+' '+y.slice(2)+' · '+DOW[dt.getDay()]:''}</span>
-        <input type="date" value="${s.data||''}" aria-label="Alterar data" title="Alterar data" onchange="saveSess('${s.id}','data',this.value)"></div>
+</div>
       <div class="sess-meta">
+        <div class="field"><label for="sd-${s.id}">Data da aula</label><input id="sd-${s.id}" type="date" value="${s.data||''}" max="${today()}" onchange="saveSess('${s.id}','data',this.value)"></div>
         <div class="field"><label>Curso ou turma</label><input list="dl-curso" value="${esc(s.curso||'')}" onchange="saveSess('${s.id}','curso',this.value)"></div>
         <div class="field"><label>Responsável</label><input list="dl-resp" value="${esc(s.responsavel||'')}" onchange="saveSess('${s.id}','responsavel',this.value)"></div>
         <div class="field"><label>Alunos na aula</label><input type="number" min="1" step="1" value="${s.total_alunos??''}" placeholder="—" onchange="saveSess('${s.id}','total_alunos',this.value)"></div>
@@ -569,6 +570,12 @@ async function saveSess(id,field,val){
   val=(val??'').toString().trim()||null;
   if(field==='total_alunos'){val=parseInt(val||0);if(!(val>0)){toast('Informe um número de alunos maior que zero.',true);renderAulas();return;}}
   if(field==='data'&&!val){toast('A data não pode ficar vazia.',true);renderAulas();return;}
+  if(field==='data'&&val===s.data) return;
+  if(field==='data'){
+    const n=aulas.filter(a=>a.sessao_id===id).length;
+    const ok=await ask({title:'Mudar a data desta aula?',body:`De <b>${fmtFull(s.data)}</b> para <b>${fmtFull(val)}</b>. Os ${n} uso(s) de peça deste dia mudam junto, e o desgaste das peças é recalculado na nova ordem das aulas.`,ok:'Mudar data'});
+    if(!ok){renderAulas();return;}
+  }
   if(field==='responsavel'&&!val){toast('O responsável não pode ficar vazio.',true);renderAulas();return;}
   const {error}=await db.from('cadaver_sessoes').update({[field]:val}).eq('id',id);
   if(error){toast('Erro ao salvar: '+errMsg(error),true);return;}
@@ -578,7 +585,7 @@ async function saveSess(id,field,val){
     if(r.error){toast('Erro ao salvar: '+errMsg(r.error),true);return;}
     aulas.forEach(a=>{if(a.sessao_id===id)a.data=val;});
   }
-  renderAll(); toast('Salvo.');
+  renderAll(); toast(field==='data'?'Data da aula alterada para '+fmtFull(val)+'.':'Salvo.');
 }
 async function delSess(id){
   const s=sessById(id), n=aulas.filter(a=>a.sessao_id===id).length;
