@@ -53,6 +53,7 @@ function errMsg(e){
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
   if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(/procedimentos_previstos/.test(m)) return 'O calendário ainda não aceita vários tipos de prática. Rode o script atualizacao-v10.sql no Supabase.';
   if(/cadaver_agenda|pecas_previstas|alunos_previstos/.test(m)) return 'O calendário ainda não foi ativado. Rode o script atualizacao-v9-calendario.sql no Supabase.';
   if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
   if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
@@ -872,7 +873,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(c
 // ================= HISTÓRICO =================
 let hist=[], histFim=true;
 const ENT={cadaver_agenda:'a aula programada de',cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
-const LBL={hora_inicio:'Início',hora_fim:'Término',alunos_previstos:'Alunos previstos',pecas_previstas:'Peças previstas',status:'Situação',nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+const LBL={hora_inicio:'Início',procedimentos_previstos:'Tipos de prática previstos',hora_fim:'Término',alunos_previstos:'Alunos previstos',pecas_previstas:'Peças previstas',status:'Situação',nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
   sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
   pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
   total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
@@ -910,6 +911,7 @@ function fmtVal(k,v){
   if(k==='sessao_id'){const s=sessById(v);return s?fmtFull(s.data):'—';}
   if(k==='data'||k==='data_aquisicao') return fmtFull(String(v));
   if(k==='valor') return money(Number(v));
+  if(k==='procedimentos_previstos') return Array.isArray(v)&&v.length?v.map(id=>{const p=procById(id);return p?p.nome:'tipo excluído';}).join(', '):'nenhum';
   if(k==='pecas_previstas') return Array.isArray(v)&&v.length?v.map(id=>{const c=corpoById(id);return c?cod(c):'peça excluída';}).join(', '):'nenhuma';
   if(k==='status') return ST[v]||String(v);
   if(k==='hora_inicio'||k==='hora_fim') return hhmm(v);
@@ -966,6 +968,8 @@ const DOWL=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const MESL=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const hhmm=t=>t?String(t).slice(0,5):'';
 const agById=id=>agenda.find(a=>a.id===id);
+const procsDe=a=>(a.procedimentos_previstos&&a.procedimentos_previstos.length)?a.procedimentos_previstos:(a.procedimento_id?[a.procedimento_id]:[]);
+let agProcs=new Set();
 const agDoDia=d=>agenda.filter(a=>a.data===d).sort((x,y)=>(hhmm(x.hora_inicio)||'99').localeCompare(hhmm(y.hora_inicio)||'99'));
 function isoDe(dt){return dt.toLocaleDateString('sv');}
 function calInit(){const t=new Date();calMes=new Date(t.getFullYear(),t.getMonth(),1);calDia=today();}
@@ -1001,12 +1005,13 @@ function conflitos(a){
   return (a.pecas_previstas||[]).filter(id=>outros.some(o=>(o.pecas_previstas||[]).includes(id)));
 }
 function agCard(a,showDate){
-  const p=procById(a.procedimento_id), cf=a.status!=='cancelada'?conflitos(a):[];
+  const pn=procsDe(a).map(id=>{const p=procById(id);return p?p.nome:null;}).filter(Boolean), cf=a.status!=='cancelada'?conflitos(a):[];
   const esg=(a.pecas_previstas||[]).filter(id=>{const c=corpoById(id);return c&&pctDoCorpo(c.id)>=100;});
   return `<article class="ag ${a.status}">
     <div class="ag-t">${showDate?`<span class="ag-d">${fmtFull(a.data)}</span>`:''}<span class="ag-h">${hhmm(a.hora_inicio)||'—'}${hhmm(a.hora_fim)?' – '+hhmm(a.hora_fim):''}</span><span class="pill st-${a.status}">${ST[a.status]}</span></div>
     <h4>${esc(a.curso||'Aula sem curso definido')}</h4>
-    <div class="ag-m">${[p?p.nome:'',a.alunos_previstos!=null?`${a.alunos_previstos} aluno(s) previsto(s)`:'',a.responsavel?'resp.: '+a.responsavel:''].filter(Boolean).map(esc).join(' · ')}</div>
+    ${pn.length?`<div class="ag-tp">${pn.map(n=>`<span class="tpchip">${esc(n)}</span>`).join('')}</div>`:''}
+    <div class="ag-m">${[a.alunos_previstos!=null?`${a.alunos_previstos} aluno(s) previsto(s)`:'',a.responsavel?'resp.: '+a.responsavel:''].filter(Boolean).map(esc).join(' · ')}</div>
     ${(a.pecas_previstas||[]).length?`<div class="ag-p">${a.pecas_previstas.map(pecaChipMini).join('')}</div>`:'<div class="ag-m muted">Nenhuma peça prevista.</div>'}
     ${a.observacao?`<p class="ag-o">${esc(a.observacao)}</p>`:''}
     ${cf.length?`<div class="ag-w">A peça ${cf.map(id=>esc(cod(corpoById(id)))).join(', ')} também está prevista em outra aula neste dia.</div>`:''}
@@ -1037,7 +1042,7 @@ function agAbrir(id,dia){
   el('ag-data').value=a.data||''; el('ag-ini').value=hhmm(a.hora_inicio); el('ag-fim').value=hhmm(a.hora_fim);
   el('ag-curso').value=a.curso||''; el('ag-alunos').value=a.alunos_previstos??''; el('ag-resp').value=a.responsavel||'';
   el('ag-obs').value=a.observacao||''; el('ag-status').value=a.status||'programada';
-  el('ag-proc').innerHTML='<option value="">—</option>'+procs.map(p=>`<option value="${p.id}" ${p.id===a.procedimento_id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  agProcs=new Set(procsDe(a)); renderAgProcs();
   agPecas=new Set(a.pecas_previstas||[]); el('ag-busca').value='';
   renderAgPecas();
   el('ag-del').hidden=!id;
@@ -1045,6 +1050,11 @@ function agAbrir(id,dia){
   setTimeout(()=>el('ag-curso').focus(),30);
 }
 function agFechar(){el('agmodal').hidden=true;document.body.style.overflow='';}
+function agToggleProc(id){agProcs.has(id)?agProcs.delete(id):agProcs.add(id);renderAgProcs();}
+function renderAgProcs(){
+  el('ag-procs').innerHTML=procs.length?procs.map(p=>{const on=agProcs.has(p.id);return `<button type="button" role="checkbox" aria-checked="${on}" class="tpk ${on?'on':''}" onclick="agToggleProc('${p.id}')"><span class="pk-c">${on?'✓':''}</span>${esc(p.nome)} <span class="muted">${pct(p.pct_por_aluno)}/aluno</span></button>`;}).join(''):'<p class="muted" style="margin:0">Cadastre os tipos de aula na aba Depreciação.</p>';
+  el('ag-tn').textContent=agProcs.size?`${agProcs.size} selecionado(s)`:'nenhum selecionado';
+}
 function agTogglePeca(id){agPecas.has(id)?agPecas.delete(id):agPecas.add(id);renderAgPecas();}
 function renderAgPecas(){
   const q=(el('ag-busca').value||'').trim().toLowerCase();
@@ -1060,7 +1070,7 @@ async function agSalvar(){
   const ini=el('ag-ini').value||null, fim=el('ag-fim').value||null;
   if(ini&&fim&&fim<=ini){toast('O horário de término precisa ser depois do início.',true);return;}
   const al=el('ag-alunos').value;
-  const row={data,hora_inicio:ini,hora_fim:fim,curso:el('ag-curso').value.trim()||null,procedimento_id:el('ag-proc').value||null,
+  const row={data,hora_inicio:ini,hora_fim:fim,curso:el('ag-curso').value.trim()||null,procedimento_id:[...agProcs][0]||null,procedimentos_previstos:[...agProcs],
     alunos_previstos:al===''?null:Math.max(0,parseInt(al)),pecas_previstas:[...agPecas],responsavel:el('ag-resp').value.trim()||null,
     observacao:el('ag-obs').value.trim()||null,status:el('ag-status').value};
   if(agEdit){
@@ -1091,9 +1101,10 @@ function agLancarAula(id){
   if(a.responsavel) el('ns-resp').value=a.responsavel;
   el('ns-obs').value=a.observacao||'';
   const ids=(a.pecas_previstas||[]).filter(x=>corpoById(x));
-  lines=ids.length?ids.map(cid=>({corpo:cid,proc:a.procedimento_id||'',alunos:''})):[newLine()];
+  const pp=procsDe(a).filter(x=>procById(x)), um=pp.length===1?pp[0]:'';
+  lines=ids.length?ids.map(cid=>({corpo:cid,proc:um,alunos:''})):[newLine()];
   showTab('aulas'); renderLines(); window.scrollTo({top:0,behavior:'smooth'});
-  toast('Dados da programação copiados. Confira os alunos de cada peça e salve.');
+  toast(pp.length>1?'Dados copiados. Escolha o tipo de prática de cada peça, confira os alunos e salve.':'Dados da programação copiados. Confira os alunos de cada peça e salve.');
 }
 
 // ================= AVALIAÇÕES (NPS dos alunos) =================
@@ -1135,6 +1146,7 @@ async function setAberto(id,horas){
 }
 function mostrarQR(id){
   const s=sessById(id); if(!s||!s.nps_token) return;
+  qrSess=id;
   const url=npsLink(s.nps_token), ab=aberta(s);
   el('q-title').textContent=[s.curso,fmtFull(s.data)].filter(Boolean).join(' · ')||'Dia de aula';
   el('q-unid').textContent=cur?cur.nome:'';
@@ -1148,6 +1160,99 @@ function mostrarQR(id){
   el('qmodal').hidden=false;
 }
 function fecharQR(){el('qmodal').hidden=true;}
+// ---------- QR Code em PDF (cartaz A4 para imprimir ou projetar) ----------
+let qrSess=null;
+function carregarImg(src){return new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=src;});}
+async function qrImagem(url,px){
+  const tmp=document.createElement('div'); tmp.style.cssText='position:fixed;left:-9999px;top:0';
+  document.body.appendChild(tmp);
+  new QRCode(tmp,{text:url,width:px,height:px,colorDark:'#0f3e3c',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  await new Promise(r=>setTimeout(r,60));
+  let img=null; const cv=tmp.querySelector('canvas'), im=tmp.querySelector('img'), sv=tmp.querySelector('svg');
+  if(cv&&cv.width) img=cv;
+  else if(im&&im.src) img=await carregarImg(im.src);
+  else if(sv) img=await carregarImg('data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(sv)));
+  tmp.remove(); return img;
+}
+function quebraTexto(ctx,txt,max){const ws=txt.split(' '),ls=[];let l='';ws.forEach(w=>{const t=l?l+' '+w:w;if(ctx.measureText(t).width>max&&l){ls.push(l);l=w;}else l=t;});if(l)ls.push(l);return ls;}
+// Monta um PDF de uma página com a imagem JPEG do cartaz e um link clicável sobre o QR e o endereço
+function pdfDeJpeg(jpeg,W,H,links){
+  const enc=new TextEncoder(), parts=[], offs=[]; let len=0;
+  const push=b=>{const u=typeof b==='string'?enc.encode(b):b;parts.push(u);len+=u.length;};
+  const obj=(n,body)=>{offs[n]=len;push(`${n} 0 obj\n`);body();push('\nendobj\n');};
+  const pw=595.28, ph=841.89;
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  const annots=links.map((_,i)=>`${6+i} 0 R`).join(' ');
+  obj(1,()=>push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R${links.length?` /Annots [${annots}]`:''} >>`));
+  obj(4,()=>{push(`<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);push(jpeg);push('\nendstream');});
+  const cs=`q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+  obj(5,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+  links.forEach((l,i)=>{const sx=pw/W, sy=ph/H; const r=[l.x*sx, ph-(l.y+l.h)*sy, (l.x+l.w)*sx, ph-l.y*sy].map(v=>v.toFixed(2)).join(' ');
+    const uri=l.url.replace(/[()\\]/g,m=>'\\'+m);
+    obj(6+i,()=>push(`<< /Type /Annot /Subtype /Link /Rect [${r}] /Border [0 0 0] /A << /S /URI /URI (${uri}) >> >>`));});
+  const n=6+links.length, xref=len;
+  push(`xref\n0 ${n}\n0000000000 65535 f \n`);
+  for(let i=1;i<n;i++) push(String(offs[i]).padStart(10,'0')+' 00000 n \n');
+  push(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:'application/pdf'});
+}
+async function baixarQRpdf(){
+  const s=sessById(qrSess); if(!s||!s.nps_token) return;
+  if(!window.QRCode){toast('Não foi possível gerar o QR Code agora. Recarregue a página e tente de novo.',true);return;}
+  const btn=el('q-pdf'); btn.disabled=true; btn.textContent='Gerando PDF…';
+  try{
+    try{await document.fonts.ready;}catch(e){}
+    const url=npsLink(s.nps_token), W=1654, H=2339, k=W/210;      // A4 a 200 dpi; k = px por mm
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
+    const F=getComputedStyle(document.documentElement).getPropertyValue('--f-display').trim()||'sans-serif';
+    const B=getComputedStyle(document.documentElement).getPropertyValue('--f-body').trim()||'sans-serif';
+    const TEAL='#0f3e3c', GREEN='#3d8b48', MUTED='#5a6f6c';
+    x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+    // logos
+    const [li,ld]=await Promise.all([carregarImg('logo-itc.png'),carregarImg('logo-idomed.png')]);
+    const hI=24*k, hD=15*k, wI=li?li.width*hI/li.height:0, wD=ld?ld.width*hD/ld.height:0, gap=10*k;
+    let lx=(W-(wI+gap+wD))/2, ly=18*k;
+    if(li) x.drawImage(li,lx,ly,wI,hI);
+    x.fillStyle='#d5e0dc'; x.fillRect(lx+wI+gap/2-1,ly+3*k,2,hI-6*k);
+    if(ld) x.drawImage(ld,lx+wI+gap,ly+(hI-hD)/2,wD,hD);
+    // faixa de título
+    x.fillStyle=TEAL; x.fillRect(0,52*k,W,40*k);
+    x.fillStyle=GREEN; x.fillRect(0,52*k,W,1.6*k);
+    x.textAlign='center'; x.fillStyle='#fff'; x.font=`800 ${13*k/1.2}px ${F}`;
+    x.fillText('Avalie esta aula prática',W/2,70*k);
+    x.fillStyle='#cfe3de'; x.font=`500 ${5.2*k}px ${B}`;
+    const sub=[cur?cur.nome:'',s.curso,fmtFull(s.data)].filter(Boolean).join('  ·  ');
+    x.fillText(sub,W/2,83*k);
+    // QR
+    const q=await qrImagem(url,1000), qs=108*k, qx=(W-qs)/2, qy=101*k;
+    x.fillStyle='#fff'; x.strokeStyle='#d5e0dc'; x.lineWidth=0.6*k;
+    const pad=7*k; x.beginPath(); x.roundRect?x.roundRect(qx-pad,qy-pad,qs+2*pad,qs+2*pad,5*k):x.rect(qx-pad,qy-pad,qs+2*pad,qs+2*pad); x.fill(); x.stroke();
+    if(q){x.imageSmoothingEnabled=false; x.drawImage(q,qx,qy,qs,qs);}
+    // instruções
+    let y=qy+qs+pad+14*k;
+    x.fillStyle=TEAL; x.font=`700 ${7.4*k}px ${F}`; x.fillText('Aponte a câmera do celular para o código',W/2,y);
+    y+=10*k; x.fillStyle=MUTED; x.font=`400 ${4.6*k}px ${B}`;
+    quebraTexto(x,'São 3 perguntas rápidas, leva menos de 1 minuto. Você pode responder sem se identificar.',150*k).forEach(l=>{x.fillText(l,W/2,y);y+=6.5*k;});
+    y+=4*k; x.fillStyle=GREEN; x.font=`600 ${3.9*k}px ${B}`;
+    x.fillText(url,W/2,y); const lw=x.measureText(url).width, linkBox={x:(W-lw)/2,y:y-4*k,w:lw,h:6*k,url};
+    if(aberta(s)){y+=9*k; x.fillStyle=MUTED; x.font=`500 ${4*k}px ${B}`; x.fillText('Avaliação aberta até '+fmtDH(s.nps_aberto_ate),W/2,y);}
+    // rodapé
+    x.fillStyle=TEAL; x.fillRect(0,H-16*k,W,16*k);
+    x.fillStyle='#cfe3de'; x.font=`500 ${3.8*k}px ${B}`;
+    x.fillText('ITC · Instituto de Treinamento em Cadáveres   ×   IDOMED · Instituto de Educação Médica',W/2,H-6.5*k);
+    const bin=atob(cv.toDataURL('image/jpeg',0.93).split(',')[1]), jpeg=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) jpeg[i]=bin.charCodeAt(i);
+    const blob=pdfDeJpeg(jpeg,W,H,[{x:qx,y:qy,w:qs,h:qs,url},linkBox]);
+    const nome='qr-avaliacao-'+slug([s.curso||'aula',s.data].join('-'))+'.pdf';
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('PDF do QR Code baixado.');
+  }catch(e){ console.error(e); toast('Não foi possível gerar o PDF: '+e.message,true); }
+  finally{ btn.disabled=false; btn.textContent='Baixar PDF'; }
+}
+
 async function copiarLink(){
   const i=el('q-url');
   try{await navigator.clipboard.writeText(i.value);toast('Link copiado.');}

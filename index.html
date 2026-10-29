@@ -312,10 +312,11 @@
     </div>
     <div class="frow">
       <div class="field"><label for="ag-curso">Curso ou turma</label><input id="ag-curso" list="dl-curso" placeholder="ex.: Anatomia Cirúrgica – 3º período"></div>
-      <div class="field"><label for="ag-proc">Tipo de aula previsto</label><select id="ag-proc"></select></div>
       <div class="field"><label for="ag-alunos">Alunos previstos</label><input id="ag-alunos" type="number" min="0" step="1"></div>
       <div class="field"><label for="ag-resp">Responsável previsto</label><input id="ag-resp" list="dl-resp" placeholder="opcional"></div>
     </div>
+    <div class="sec-t">Tipos de prática previstos <span class="muted" id="ag-tn" style="text-transform:none;letter-spacing:0;font-weight:500"></span></div>
+    <div class="tpgrid" id="ag-procs" role="group" aria-label="Tipos de prática previstos"></div>
     <div class="sec-t">Peças previstas <span class="muted" id="ag-pn" style="text-transform:none;letter-spacing:0;font-weight:500"></span></div>
     <input id="ag-busca" type="search" placeholder="Buscar peça por código ou segmento" oninput="renderAgPecas()" aria-label="Buscar peça">
     <div class="pkgrid" id="ag-pecas"></div>
@@ -338,7 +339,7 @@
     <p class="q-ask">Avalie a aula: aponte a câmera do celular para o código</p>
     <div class="q-box" id="q-box"></div>
     <p class="q-status" id="q-status"></p>
-    <div class="q-link"><input id="q-url" readonly aria-label="Link da avaliação" onclick="this.select()"><button class="btn ghost sm" onclick="copiarLink()">Copiar link</button><a class="btn ghost sm" id="q-open" target="_blank" rel="noopener">Abrir ↗</a></div>
+    <div class="q-link"><input id="q-url" readonly aria-label="Link da avaliação" onclick="this.select()"><button class="btn ghost sm" onclick="copiarLink()">Copiar link</button><button class="btn green sm" id="q-pdf" onclick="baixarQRpdf()">Baixar PDF</button><a class="btn ghost sm" id="q-open" target="_blank" rel="noopener">Abrir ↗</a></div>
     <div class="q-act" id="q-act"></div>
   </div>
 </div>
