@@ -56,6 +56,7 @@ function errMsg(e){
   if(/procedimentos_previstos/.test(m)) return 'O calendário ainda não aceita vários tipos de prática. Rode o script atualizacao-v10.sql no Supabase.';
   if(/cadaver_agenda|pecas_previstas|alunos_previstos/.test(m)) return 'O calendário ainda não foi ativado. Rode o script atualizacao-v9-calendario.sql no Supabase.';
   if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
+  if(/segmento_chk/.test(m)) return 'O banco ainda não aceita os segmentos Cabeça e Torso com membros. Rode o script atualizacao-v12-segmentos.sql no Supabase.';
   if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
   if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
   if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
@@ -293,7 +294,9 @@ const PF=[
 // ---------- segmentos ----------
 const SEG={
   corpo_inteiro:{l:'Corpo inteiro',img:'seg-corpo-inteiro.png'},
+  torso_membros:{l:'Torso com membros',img:'seg-torso-membros.png'},
   torso_cabeca:{l:'Torso com cabeça',img:'seg-torso-cabeca.png'},
+  cabeca:{l:'Cabeça',img:'seg-cabeca.png'},
   membro_superior:{l:'Membro superior',img:'seg-membro-superior.png'},
   membro_inferior:{l:'Membro inferior',img:'seg-membro-inferior.png'},
 };
@@ -301,6 +304,8 @@ function segOf(c){
   if(c&&SEG[c.segmento]) return c.segmento;
   const e=((c&&c.especime)||'').toLowerCase();
   if(/inteiro/.test(e)) return 'corpo_inteiro';
+  if(/(tronco|torso)/.test(e)&&/membro/.test(e)) return 'torso_membros';
+  if(/cabe/.test(e)&&!/(tronco|torso|tórax|torax)/.test(e)) return 'cabeca';
   if(/membro sup|braço|braco|antebra|mão|mao|punho|ombro|cotovelo/.test(e)) return 'membro_superior';
   if(/membro inf|perna|pé\b|pe\b|joelho|quadril|coxa|tornozelo/.test(e)) return 'membro_inferior';
   if(/tronco|torso|cabe|tórax|torax|abdome|pelve|pescoço/.test(e)) return 'torso_cabeca';
@@ -327,7 +332,7 @@ function renderPecas(){
   const grupos=new Map();
   list.forEach(c=>{const k=keyOrig(c);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(c);});
   const ordem=[...grupos.entries()].sort((a,b)=>a[0].localeCompare(b[0],'pt-BR',{numeric:true}));
-  const ORD=['corpo_inteiro','torso_cabeca','membro_superior','membro_inferior',''];
+  const ORD=['corpo_inteiro','torso_membros','torso_cabeca','cabeca','membro_superior','membro_inferior',''];
   w.innerHTML=ordem.map(([k,ls])=>{
     const todos=corpos.filter(c=>keyOrig(c)===k), f=todos[0];
     ls.sort((a,b)=>ORD.indexOf(segOf(a))-ORD.indexOf(segOf(b))||byCod(a,b));
@@ -421,7 +426,7 @@ async function savePeca(){
   });
   row.link_drive=el('pf-link_drive').value.trim()?safeUrl(el('pf-link_drive').value):null;
   row.segmento=pfSeg||null;
-  if(!row.segmento){toast('Escolha o segmento da peça (corpo inteiro, torso, membro superior ou inferior).',true);return;}
+  if(!row.segmento){toast('Escolha o segmento da peça.',true);return;}
   if(!row.nome){toast('Preencha o código original da peça.',true);el('pf-nome').focus();return;}
   row.valor=row.valor||0; row.uso_inicial=Math.min(Math.max(row.uso_inicial||0,0),100);
   if(row.idade!=null) row.idade=Math.round(row.idade);
