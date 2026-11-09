@@ -52,7 +52,7 @@ function errMsg(e){
   if(!e) return '';
   const m=e.message||'';
   if(e.code==='23505') return 'Já existe um registro com esse nome.';
-  if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return 'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
+  if(e.code==='42501'||/row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(m)) return (typeof podeEditar!=='undefined'&&!podeEditar)?'Seu acesso é somente de visualização.':'Sem permissão. Sua sessão pode ter expirado: saia e entre de novo.';
   if(/procedimentos_previstos/.test(m)) return 'O calendário ainda não aceita vários tipos de prática. Rode o script atualizacao-v10.sql no Supabase.';
   if(/cadaver_agenda|pecas_previstas|alunos_previstos/.test(m)) return 'O calendário ainda não foi ativado. Rode o script atualizacao-v9-calendario.sql no Supabase.';
   if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
@@ -131,6 +131,7 @@ function renderUnits(){
 }
 async function addUnit(ev){
   ev.preventDefault();
+  if(somenteLeitura()) return;
   const nome=el('nu-nome').value.trim();
   if(!nome){toast('Digite o nome da unidade.',true);return;}
   const {data,error}=await db.from('cadaver_unidades').insert({nome}).select().single();
@@ -138,6 +139,7 @@ async function addUnit(ev){
   unidades.push(data); renderUnits(); toast('Unidade adicionada.');
 }
 async function delUnit(id){
+  if(somenteLeitura()) return;
   const u=unidades.find(x=>x.id===id); if(!u)return;
   const s=resumo[id]||{pecas:0,dias:0};
   const vazio=!s.pecas&&!s.dias;
@@ -417,6 +419,7 @@ function closePeca(){el('pmodal').hidden=true;document.body.style.overflow='';cu
 el('pmodal').addEventListener('click',e=>{if(e.target===el('pmodal'))closePeca();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!el('pmodal').hidden&&el('modal').hidden)closePeca();});
 async function savePeca(){
+  if(somenteLeitura()) return;
   const row={};
   PF.filter(f=>!f.calc).forEach(f=>{
     let v=el('pf-'+f.k).value.trim();
@@ -486,6 +489,7 @@ function updTotal(){
   el('ns-total').innerHTML=ok.length?`${ok.length} peça(s) · custo estimado <b>${money(tot)}</b>`:'';
 }
 async function saveDia(){
+  if(somenteLeitura()) return;
   const data=el('ns-data').value, responsavel=el('ns-resp').value.trim();
   if(!data){toast('Informe a data da aula.',true);return;}
   if(!responsavel){toast('Informe o nome de quem está registrando a aula.',true);el('ns-resp').focus();return;}
@@ -571,6 +575,7 @@ function depCell(a){
   return `<span class="num">${pct(s.aplicado)}</span>`;
 }
 async function saveSess(id,field,val){
+  if(somenteLeitura()) return;
   const s=sessById(id); if(!s)return;
   val=(val??'').toString().trim()||null;
   if(field==='total_alunos'){val=parseInt(val||0);if(!(val>0)){toast('Informe um número de alunos maior que zero.',true);renderAulas();return;}}
@@ -609,6 +614,7 @@ async function addToSess(id){
   aulas.push(data); renderAll(); toast('Peça adicionada ao dia.');
 }
 async function saveAula(id,field,val){
+  if(somenteLeitura()) return;
   const a=aulas.find(x=>x.id===id); if(!a)return;
   if(field==='num_alunos') val=parseInt(val||0);
   if(field==='procedimento_id') val=val||null;
@@ -639,6 +645,7 @@ el('ax-file').addEventListener('change',()=>{const f=el('ax-file').files[0];if(f
 function slug(s){return s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9.]+/g,'-').replace(/^-+|-+$/g,'');}
 function fmtSize(b){if(!b)return'';return b>=1048576?NUM.format(b/1048576)+' MB':NUM.format(Math.ceil(b/1024))+' KB';}
 async function addAnexo(){
+  if(somenteLeitura()) return;
   const titulo=el('ax-titulo').value.trim(), categoria=el('ax-cat').value, descricao=el('ax-desc').value.trim()||null;
   const btn=el('ax-btn');
   let row={unidade_id:cur.id,titulo,categoria,descricao};
@@ -711,6 +718,7 @@ function renderAnexos(){
 
 // ================= DEPRECIAÇÃO (tipos de aula + simulador) =================
 async function addProc(){
+  if(somenteLeitura()) return;
   const nome=el('np-nome').value.trim();
   if(!nome){toast('Dê um nome ao tipo de aula.',true);return;}
   const p=Number(el('np-pct').value||0);
@@ -724,6 +732,7 @@ async function addProc(){
   renderAll(); toast('Tipo de aula adicionado.');
 }
 async function saveProc(id,field,val){
+  if(somenteLeitura()) return;
   const p=procById(id); if(!p)return;
   if(field==='pct_por_aluno') val=Number(val||0);
   if(field==='desgaste_ideal'){val=Number(val||0);if(!(val>0&&val<=100)){toast('O desgaste ideal precisa estar entre 0 e 100%.',true);renderProcs();return;}}
@@ -1077,6 +1086,7 @@ function renderAgPecas(){
     :'<p class="muted">Cadastre as peças na aba Peças para poder prevê-las.</p>';
 }
 async function agSalvar(){
+  if(somenteLeitura()) return;
   const data=el('ag-data').value;
   if(!data){toast('Informe a data da aula programada.',true);return;}
   const ini=el('ag-ini').value||null, fim=el('ag-fim').value||null;
@@ -1142,6 +1152,7 @@ function npsStrip(s){
   </div>`;
 }
 async function gerarLink(id){
+  if(somenteLeitura()) return;
   const s=sessById(id); if(!s) return;
   const patch={nps_token:s.nps_token||novoToken(), nps_aberto_ate:new Date(Date.now()+48*3600e3).toISOString()};
   const {error}=await db.from('cadaver_sessoes').update(patch).eq('id',id);
@@ -1149,6 +1160,7 @@ async function gerarLink(id){
   Object.assign(s,patch); renderAulas(); mostrarQR(id);
 }
 async function setAberto(id,horas){
+  if(somenteLeitura()) return;
   const s=sessById(id); if(!s) return;
   const v=new Date(Date.now()+horas*3600e3).toISOString();
   const {error}=await db.from('cadaver_sessoes').update({nps_aberto_ate:v}).eq('id',id);
@@ -1403,6 +1415,60 @@ function exportRespostas(){
   toast('CSV exportado.');
 }
 
+// ================= PERMISSÕES (somente visualização) e BACKUP =================
+let podeEditar=true;
+const LIVRES=new Set(['pc-busca','u-switch','q-url','ag-busca','m-input']);
+let travaPend=false;
+function travar(){
+  travaPend=false; if(podeEditar) return;
+  document.querySelectorAll('#view-unit input, #view-unit select, #view-unit textarea, #pmodal input, #pmodal select, #pmodal textarea').forEach(e=>{
+    if(LIVRES.has(e.id)||e.closest('.toolbar,.sim')) return;
+    e.disabled=true;
+  });
+}
+new MutationObserver(()=>{if(!podeEditar&&!travaPend){travaPend=true;requestAnimationFrame(travar);}}).observe(document.body,{childList:true,subtree:true});
+async function verPermissao(){
+  const r=await db.rpc('cadaver_pode_editar');
+  // sem a atualização v13 no banco, ninguém é bloqueado (comportamento anterior)
+  podeEditar=r.error?true:r.data===true;
+  document.body.classList.toggle('ro',!podeEditar);
+  el('ro-badge').hidden=podeEditar;
+  if(!podeEditar) travar();
+}
+function somenteLeitura(){ if(podeEditar) return false; toast('Seu acesso é somente de visualização.',true); return true; }
+
+const BK=[['cadaver_unidades','Unidades'],['cadaver_corpos','Peças'],['cadaver_procedimentos','Tipos de aula'],['cadaver_sessoes','Dias de aula'],
+  ['cadaver_aulas','Usos de peças'],['cadaver_agenda','Calendário'],['cadaver_anexos','Anexos'],['cadaver_nps_respostas','Avaliações'],['cadaver_historico','Histórico']];
+function carregarScript(src){return new Promise((res,rej)=>{if(window.XLSX)return res();const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('não foi possível carregar o gerador de planilhas'));document.head.appendChild(s);});}
+async function lerTudo(t){
+  const out=[]; for(let i=0;;i+=1000){
+    const r=await db.from(t).select('*').order('id').range(i,i+999);
+    if(r.error) throw r.error; out.push(...r.data); if(r.data.length<1000) break;
+  } return out;
+}
+const celula=v=>v==null?'':Array.isArray(v)?v.join(', '):typeof v==='object'?JSON.stringify(v):v;
+async function baixarBackup(){
+  if(somenteLeitura()) return;
+  const b=el('bk-btn'); b.disabled=true; b.textContent='Gerando backup…';
+  try{
+    await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const wb=XLSX.utils.book_new(), resumo=[['Tabela','Aba','Registros']];
+    for(const [t,nome] of BK){
+      let rows=[]; try{ rows=await lerTudo(t); }catch(e){ resumo.push([t,nome,'não disponível: '+(e.message||e)]); continue; }
+      const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+      const aoa=[cols,...rows.map(r=>cols.map(c=>celula(r[c])))];
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows.length?aoa:[['(sem registros)']]),nome);
+      resumo.push([t,nome,rows.length]);
+    }
+    const sobre=[['Backup – Central de Controle Anatômico'],['Gerado em',new Date().toLocaleString('pt-BR')],['Por',usuario?usuario.email:''],[],...resumo];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sobre),'Sobre este backup');
+    wb.SheetNames.unshift(wb.SheetNames.pop());
+    XLSX.writeFile(wb,'backup-central-anatomica-'+today()+'.xlsx');
+    toast('Backup baixado. Guarde o arquivo na sua pasta do Drive.');
+  }catch(e){ toast('Não foi possível gerar o backup: '+errMsg(e),true); }
+  finally{ b.disabled=false; b.textContent='Baixar backup (Excel)'; }
+}
+
 // ================= LOGIN (Supabase Auth) =================
 let usuario=null, recuperando=false;
 function showView(v){
@@ -1437,6 +1503,7 @@ async function entrouComo(session){
   const nome=(usuario.user_metadata&&(usuario.user_metadata.nome||usuario.user_metadata.name))||'';
   el('who-mail').textContent=nome||usuario.email;
   if(!el('ns-resp').value) el('ns-resp').value=nome||'';
+  await verPermissao();
   showView('units'); el('ugrid').innerHTML='<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   await bootUnits();
 }

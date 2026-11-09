@@ -594,3 +594,20 @@ td.wrapcell{white-space:normal;min-width:240px;max-width:420px}
 .tpchip{font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--teal-soft);color:var(--teal-tx)}
 #agmodal .frow:nth-of-type(2){grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
 @media (max-width:640px){.sess-meta{grid-template-columns:1fr}}
+
+/* ===================== somente visualização ===================== */
+.ro-badge{font-size:12px;font-weight:700;padding:5px 10px;border-radius:99px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+.units-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.units-h h2{margin-bottom:6px}
+body.ro .ed-only,body.ro .uadd,body.ro .ucard .del,body.ro .daycard,body.ro .sess-add,body.ro #pf-del,body.ro #ag-del,
+body.ro #tab-anexos .formcard,body.ro #tab-prem .block:first-of-type .formcard,body.ro .copyrow,body.ro #q-act,
+body.ro .icon[title^="Excluir"],body.ro .icon[title^="Remover"],
+body.ro [onclick^="setAberto"],body.ro [onclick^="gerarLink"],body.ro [onclick^="agAbrir"],body.ro [onclick^="agLancarAula"],
+body.ro [onclick^="openPeca(null"],body.ro [onclick^="novoSegmento"],body.ro [onclick^="savePeca"],body.ro [onclick^="agSalvar"],
+body.ro [onclick^="delResposta"]{display:none!important}
+body.ro .segopt,body.ro .tpk,body.ro .pk{pointer-events:none}
+body.ro .segopt:not(.on){opacity:.45}
+body.ro input:disabled,body.ro select:disabled,body.ro textarea:disabled{background:transparent;border-color:transparent;color:var(--ink);opacity:1;-webkit-text-fill-color:var(--ink);cursor:default}
+body.ro select:disabled{appearance:none;-webkit-appearance:none}
+body.ro .pgrid input:disabled,body.ro .pgrid select:disabled,body.ro .sess-meta input:disabled{border-color:var(--line);background:var(--surface-2)}
+@media (max-width:520px){.who span.ro-badge{display:inline-block}}

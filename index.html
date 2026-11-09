@@ -24,7 +24,7 @@
     <img class="idomed" src="logo-idomed.png" alt="IDOMED – Instituto de Educação Médica">
   </div>
   <h1>Central de Controle Anatômico <span>– IDOMED</span></h1>
-  <div class="who" id="who" hidden><span class="sync" id="sync" title="Situação do salvamento na nuvem"><i></i><em id="sync-t">Conectado à nuvem</em></span><span id="who-mail"></span><button class="btn ghost sm" onclick="sair()">Sair</button></div>
+  <div class="who" id="who" hidden><span class="ro-badge" id="ro-badge" hidden title="Você pode ver tudo, mas não alterar">Somente visualização</span><span class="sync" id="sync" title="Situação do salvamento na nuvem"><i></i><em id="sync-t">Conectado à nuvem</em></span><span id="who-mail"></span><button class="btn ghost sm" onclick="sair()">Sair</button></div>
 </div></header>
 
 <!-- ================= LOGIN ================= -->
@@ -54,7 +54,7 @@
 <!-- ================= SELEÇÃO DE UNIDADE ================= -->
 <section id="view-units" class="units wrap" hidden>
   <div class="eyebrow">Unidades</div>
-  <h2>Qual unidade você vai abrir?</h2>
+  <div class="units-h"><h2>Qual unidade você vai abrir?</h2><button class="btn ghost ed-only" id="bk-btn" onclick="baixarBackup()">Baixar backup (Excel)</button></div>
   <p class="lead">Cada unidade tem seu próprio acervo de peças, aulas, anexos e tipos de aula. Escolha uma para abrir.</p>
   <div id="setup" class="setup" hidden></div>
   <div class="ugrid" id="ugrid">
