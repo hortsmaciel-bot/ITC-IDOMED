@@ -1427,6 +1427,14 @@ function travar(){
   });
 }
 new MutationObserver(()=>{if(!podeEditar&&!travaPend){travaPend=true;requestAnimationFrame(travar);}}).observe(document.body,{childList:true,subtree:true});
+// Botão de backup direto no Drive: aparece quando config.js tem BACKUP_DRIVE_URL (link do App da Web do Google)
+(function(){
+  try{
+    const u=typeof BACKUP_DRIVE_URL!=='undefined'?String(BACKUP_DRIVE_URL||'').trim():'';
+    if(/^https:\/\/script\.google\.com\//.test(u)){const b=el('bk-drive');b.href=u;b.hidden=false;
+      b.addEventListener('click',()=>toast('Backup iniciado numa nova aba. Leva alguns segundos; o resultado aparece lá.'));}
+  }catch(e){}
+})();
 async function verPermissao(){
   const r=await db.rpc('cadaver_pode_editar');
   // sem a atualização v13 no banco, ninguém é bloqueado (comportamento anterior)
