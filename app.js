@@ -1363,7 +1363,7 @@ async function gerarSolicitacaoPDF(){
     const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
     const F=css('--f-display')||'sans-serif', B=css('--f-body')||'sans-serif';
     const TEAL='#0f3e3c', GREEN='#3d8b48', MUTED='#5a6f6c', LINE='#d5e0dc', BG='#f2f6f5';
-    const [li,ld]=await Promise.all([carregarImg('logo-itc.png'),carregarImg('logo-idomed.png')]);
+    const [li,ld,ass]=await Promise.all([carregarImg('logo-itc.png'),carregarImg('logo-idomed.png'),carregarImg('assinatura.png')]);
     const itens=[...solSel].map(([id,q])=>({e:estById(id),q})).filter(x=>x.e).sort((a,b)=>(a.e.tipo||'~').localeCompare(b.e.tipo||'~','pt-BR')||a.e.nome.localeCompare(b.e.nome,'pt-BR'));
     const total=itens.reduce((t,x)=>t+x.q*Number(x.e.valor_unitario||0),0);
     const hoje=new Date(), numero='SC-'+hoje.toLocaleDateString('sv').replace(/-/g,'')+'-'+String(hoje.getHours()).padStart(2,'0')+String(hoje.getMinutes()).padStart(2,'0');
@@ -1417,15 +1417,17 @@ async function gerarSolicitacaoPDF(){
     });
     // total, observações e assinaturas
     const obsL=obs?(x.font=`400 ${3.7*k}px ${B}`,quebraTexto(x,obs,MR-ML)):[];
-    const resto=14*k+(obsL.length?(9+obsL.length*5.2)*k:0)+30*k;
+    const resto=14*k+(obsL.length?(9+obsL.length*5.2)*k:0)+38*k;
     if(y+resto>TOP_LIM){fecharPagina();novaPagina(false,false);}
     y+=4*k; x.fillStyle=TEAL; x.fillRect(xs[2],y,xs[5]-xs[2],10*k);
     x.fillStyle='#fff'; x.textAlign='left'; x.font=`600 ${3.6*k}px ${B}`; x.fillText('TOTAL ESTIMADO',xs[2]+3*k,y+6.6*k);
     x.textAlign='right'; x.font=`800 ${4.6*k}px ${F}`; x.fillText(money(total),xs[5]-2*k,y+7*k); y+=16*k;
     x.textAlign='left';
     if(obsL.length){x.fillStyle=MUTED;x.font=`700 ${3.1*k}px ${B}`;x.fillText('OBSERVAÇÕES',ML,y);y+=5.5*k;x.fillStyle='#10292a';x.font=`400 ${3.7*k}px ${B}`;obsL.forEach(l=>{x.fillText(l,ML,y);y+=5.2*k;});y+=4*k;}
-    y+=14*k; const half=(MR-ML-12*k)/2;
-    [['Solicitado por',ML],['Aprovado por',ML+half+12*k]].forEach(([t,sx])=>{x.fillStyle='#10292a';x.fillRect(sx,y,half,2);x.fillStyle=MUTED;x.font=`500 ${3.3*k}px ${B}`;x.fillText(t+(t==='Solicitado por'&&solic?' · '+solic:''),sx,y+5*k);});
+    // assinatura (só a imagem, sobre uma linha fina)
+    if(ass){const aw=62*k, ah=ass.height*aw/ass.width; y+=6*k; x.drawImage(ass,MR-aw-4*k,y,aw,ah); y+=ah+2*k; x.fillStyle=LINE; x.fillRect(MR-aw-10*k,y,aw+12*k,2);
+      x.textAlign='center'; x.fillStyle='#10292a'; x.font=`600 ${3.5*k}px ${B}`; x.fillText('Hortência Oliveira',MR-aw/2-4*k,y+5.5*k);
+      x.fillStyle=MUTED; x.font=`400 ${3.2*k}px ${B}`; x.fillText('Anatomista · Grupo Kefraya',MR-aw/2-4*k,y+10*k); x.textAlign='left';}
     fecharPagina();
     // rodapé com número de página
     const N=paginas.length;
