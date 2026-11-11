@@ -613,3 +613,33 @@ body.ro .pgrid input:disabled,body.ro .pgrid select:disabled,body.ro .sess-meta 
 @media (max-width:520px){.who span.ro-badge{display:inline-block}}
 
 .units-h .acts-row a.btn{text-decoration:none}
+
+/* ===================== v15: estoque de insumos ===================== */
+.est-busca{width:280px;max-width:100%;margin:0 0 12px}
+.chip-sel{border-radius:99px;padding:5px 12px;font-size:13px;width:auto;min-width:0}
+table.est td{vertical-align:middle}
+table.est td input:not([type=checkbox]){min-width:0}
+table.est td:first-child input{min-width:170px;font-weight:600}
+.qcell{display:inline-flex;align-items:center;gap:4px;justify-content:flex-end;white-space:nowrap}
+.qcell em{font-style:normal;font-size:12px;color:var(--muted);min-width:22px;text-align:left}
+.qb{all:unset;cursor:pointer;width:26px;height:26px;border-radius:7px;border:1px solid var(--line);background:var(--surface);display:inline-grid;place-items:center;font-weight:700;color:var(--ink);font-size:15px;line-height:1}
+.qb:hover{background:var(--surface-2)}
+.qb:focus-visible{outline:2px solid var(--focus)}
+.sheet.wide{max-width:1100px}
+.sol-list{max-height:52vh;overflow:auto}
+.sol-list tr.sel td{background:var(--green-soft)}
+.sol-list input[type=checkbox]{width:18px;height:18px;accent-color:var(--green)}
+#sol-total{font-size:14px;color:var(--muted)}
+#sol-total b{color:var(--ink)}
+@media (max-width:640px){
+  .shead .btn{width:100%}
+  .est-busca{width:100%}
+}
+table.est td:first-child input{min-width:210px}
+table.est td:nth-child(2) input{min-width:150px}
+.sol-list th:first-child,.sol-list td:first-child{width:36px;text-align:center}
+table.est td .w-int{width:60px;min-width:54px}
+table.est td .w-val{width:92px;min-width:84px}
+table.est td:first-child input{min-width:190px}
+table.est td:nth-child(2) input{min-width:130px}
+table.est th,table.est td{padding-left:8px;padding-right:8px}

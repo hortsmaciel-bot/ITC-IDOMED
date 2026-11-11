@@ -77,6 +77,7 @@
       <button data-tab="aulas">Aulas</button>
       <button data-tab="cal">Calendário</button>
       <button data-tab="anexos">Anexos</button>
+      <button data-tab="estoque">Estoque</button>
       <button data-tab="prem">Depreciação</button>
       <button data-tab="rel">Relatórios</button>
       <button data-tab="aval">Avaliações</button>
@@ -172,6 +173,30 @@
       <div id="w-anexos"></div>
     </section>
 
+    <!-- ESTOQUE -->
+    <section class="tab" id="tab-estoque">
+      <div class="shead"><div><h3>Estoque de insumos</h3><p>Materiais da unidade com estoque mínimo, quantidade atual e valor unitário. Itens abaixo do mínimo entram sozinhos na solicitação de compra.</p></div>
+        <button class="btn green" onclick="abrirSolicitacao()">Solicitação de compra (PDF)</button></div>
+      <div class="formcard ed-only">
+        <div class="frow">
+          <div class="field" style="flex:2 1 220px"><label for="ne-nome">Item</label><input id="ne-nome" placeholder="ex.: Luva de procedimento M"></div>
+          <div class="field"><label for="ne-tipo">Tipo de insumo</label><input id="ne-tipo" list="dl-tipo-insumo" placeholder="ex.: EPI"></div>
+          <div class="field" style="flex:0 1 110px"><label for="ne-um">Unidade</label><input id="ne-um" list="dl-unid-med" value="un"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label for="ne-min">Estoque mínimo</label><input id="ne-min" type="number" min="0" step="1" placeholder="0"></div>
+          <div class="field"><label for="ne-atual">Quantidade atual</label><input id="ne-atual" type="number" min="0" step="1" placeholder="0"></div>
+          <div class="field"><label for="ne-valor">Valor unitário (R$)</label><input id="ne-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>
+          <div class="field" style="flex:2 1 220px"><label for="ne-link">Link de referência do item</label><input id="ne-link" type="url" placeholder="https://loja.com/produto"></div>
+          <div class="field"><button class="btn green" onclick="addEst()">Adicionar item</button></div>
+        </div>
+      </div>
+      <div class="chips" id="est-resumo"></div>
+      <input id="est-busca" type="search" placeholder="Buscar item" oninput="renderEstoque()" aria-label="Buscar item" class="est-busca">
+      <div id="w-estoque"></div>
+      <datalist id="dl-tipo-insumo"></datalist><datalist id="dl-unid-med"></datalist>
+    </section>
+
     <!-- DEPRECIAÇÃO -->
     <section class="tab" id="tab-prem">
       <div class="shead"><div><h3>Depreciação</h3><p>O percentual de depreciação por aluno de cada tipo de aula. Mudou um número, todos os custos recalculam.</p></div></div>
@@ -251,7 +276,7 @@
       <div class="toolbar">
         <div class="field"><label for="h-user">Pessoa</label><select id="h-user" onchange="renderHist()"></select></div>
         <div class="field"><label for="h-tipo">Assunto</label><select id="h-tipo" onchange="renderHist()">
-          <option value="">Tudo</option><option value="cadaver_corpos">Peças</option><option value="aulas">Aulas</option><option value="cadaver_anexos">Anexos</option><option value="cadaver_procedimentos">Tipos de aula</option><option value="cadaver_agenda">Calendário</option><option value="cadaver_unidades">Unidade</option></select></div>
+          <option value="">Tudo</option><option value="cadaver_corpos">Peças</option><option value="aulas">Aulas</option><option value="cadaver_anexos">Anexos</option><option value="cadaver_procedimentos">Tipos de aula</option><option value="cadaver_agenda">Calendário</option><option value="cadaver_estoque">Estoque</option><option value="cadaver_unidades">Unidade</option></select></div>
         <div class="field"><label for="h-acao">Ação</label><select id="h-acao" onchange="renderHist()"><option value="">Todas</option><option value="criou">Criou</option><option value="alterou">Alterou</option><option value="excluiu">Excluiu</option></select></div>
         <div class="field"><label for="h-busca">Buscar</label><input id="h-busca" type="search" placeholder="código, nome, valor…" oninput="renderHist()"></div>
       </div>
@@ -299,6 +324,25 @@
 <!-- listas de sugestões -->
 <datalist id="dl-especime"></datalist><datalist id="dl-local"></datalist><datalist id="dl-proc"></datalist>
 <datalist id="dl-forn"></datalist><datalist id="dl-etnia"></datalist><datalist id="dl-resp"></datalist><datalist id="dl-curso"></datalist>
+
+<!-- solicitação de compra -->
+<div id="solmodal" class="modal" hidden onclick="if(event.target===this)fecharSolicitacao()">
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="sol-title">
+    <div class="sheet-h"><div class="sheet-id"><h2 id="sol-title">Solicitação de compra</h2><div class="tags"><span class="tag n" id="sol-unid"></span></div></div><button class="icon close" onclick="fecharSolicitacao()" aria-label="Fechar">✕</button></div>
+    <p class="muted" style="margin:0 0 10px">Os itens abaixo do mínimo já vêm marcados com a quantidade que falta. Ajuste o que for preciso.</p>
+    <div class="tablewrap sol-list" id="sol-itens"></div>
+    <div class="frow">
+      <div class="field"><label for="sol-solic">Solicitante</label><input id="sol-solic" placeholder="seu nome"></div>
+      <div class="field" style="flex:2 1 260px"><label for="sol-obs">Observações</label><input id="sol-obs" placeholder="opcional (ex.: urgente para a aula de 20/11)"></div>
+    </div>
+    <div class="sheet-f">
+      <span id="sol-total"></span>
+      <span class="grow"></span>
+      <button class="btn ghost" onclick="fecharSolicitacao()">Fechar</button>
+      <button class="btn green" id="sol-gerar" onclick="gerarSolicitacaoPDF()">Gerar PDF</button>
+    </div>
+  </div>
+</div>
 
 <!-- aula programada -->
 <div id="agmodal" class="modal" hidden onclick="if(event.target===this)agFechar()">

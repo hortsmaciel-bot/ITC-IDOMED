@@ -57,6 +57,7 @@ function errMsg(e){
   if(/cadaver_agenda|pecas_previstas|alunos_previstos/.test(m)) return 'O calendário ainda não foi ativado. Rode o script atualizacao-v9-calendario.sql no Supabase.';
   if(/cadaver_nps_respostas|nps_token|nps_aberto_ate|nps_info|nps_responder/.test(m)) return 'As avaliações ainda não foram ativadas. Rode o script atualizacao-v8-avaliacoes.sql no Supabase.';
   if(/segmento_chk/.test(m)) return 'O banco ainda não aceita os segmentos Cabeça e Torso com membros. Rode o script atualizacao-v12-segmentos.sql no Supabase.';
+  if(/cadaver_estoque|quantidade_atual|estoque_minimo/.test(m)) return 'O controle de estoque ainda não foi ativado. Rode o script atualizacao-v15-estoque.sql no Supabase.';
   if(/segmento/.test(m)) return 'O banco ainda não tem o campo de segmento. Rode o script atualizacao-v7-segmentos.sql no Supabase.';
   if(/cadaver_historico/.test(m)) return 'O histórico ainda não foi ativado. Rode o script atualizacao-v6-historico.sql no Supabase.';
   if(/desgaste_ideal/.test(m)) return 'O banco ainda não tem o campo de desgaste ideal. Rode o script atualizacao-v5.sql no Supabase.';
@@ -167,11 +168,11 @@ async function openUnit(id){
   el('u-name').textContent=u.nome;
   document.title=u.nome+' · Central de Controle Anatômico';
   el('u-switch').innerHTML=unidades.map(x=>`<option value="${x.id}" ${x.id===id?'selected':''}>${esc(x.nome)}</option>`).join('');
-  ['f-de','f-ate','np-nome','np-pct','np-desc','pc-busca','ns-curso','ns-obs','ns-alunos','ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value='');
+  ['est-busca','sol-obs','f-de','f-ate','np-nome','np-pct','np-desc','pc-busca','ns-curso','ns-obs','ns-alunos','ax-titulo','ax-url','ax-desc'].forEach(i=>el(i).value='');
   el('ns-data').value=today(); el('ax-file').value=''; anexoFiltro='';
   lines=[newLine()];
   showTab('pecas');
-  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];respostas=[];agenda=[];avAll=null;calInit(); renderAll();
+  corpos=[];procs=[];aulas=[];sessoes=[];anexos=[];respostas=[];agenda=[];estoque=[];estoqueErr=null;solSel=new Map();avAll=null;calInit(); renderAll();
   const {error}=await load();
   if(error){toast('Erro ao carregar: '+errMsg(error),true);}
   if(cur&&cur.id===id) renderAll();
@@ -185,6 +186,7 @@ function showTab(t){
   if(t==='hist') loadHist();
   if(t==='aval') renderAval();
   if(t==='cal') renderCal();
+  if(t==='estoque') renderEstoque();
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
@@ -223,14 +225,15 @@ function rotulo(p){const lv=nivel(p);return p>=100?'esgotada':lv==='hot'?'quase 
 // ---------- carga ----------
 async function load(){
   const uid=cur.id;
-  const [r1,r2,r3,r4,r5,r6,r7]=await Promise.all([
+  const [r1,r2,r3,r4,r5,r6,r7,r8]=await Promise.all([
     db.from('cadaver_corpos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_procedimentos').select('*').eq('unidade_id',uid).order('created_at'),
     db.from('cadaver_aulas').select('*').eq('unidade_id',uid).order('data'),
     db.from('cadaver_sessoes').select('*').eq('unidade_id',uid).order('data',{ascending:false}),
     db.from('cadaver_anexos').select('*').eq('unidade_id',uid).order('created_at',{ascending:false}),
     db.from('cadaver_nps_respostas').select('*').eq('unidade_id',uid).order('created_at',{ascending:false}),
-    db.from('cadaver_agenda').select('*').eq('unidade_id',uid).order('data')
+    db.from('cadaver_agenda').select('*').eq('unidade_id',uid).order('data'),
+    db.from('cadaver_estoque').select('*').eq('unidade_id',uid).order('nome')
   ]);
   if(!cur||cur.id!==uid) return {};
   const e=r1.error||r2.error||r3.error;
@@ -239,6 +242,7 @@ async function load(){
   sessoes=r4.error?[]:(r4.data||[]); anexos=r5.error?[]:(r5.data||[]);
   respostas=r6.error?[]:(r6.data||[]); respErr=r6.error||null; avAll=null;
   agenda=r7.error?[]:(r7.data||[]); agendaErr=r7.error||null;
+  estoque=r8.error?[]:(r8.data||[]); estoqueErr=r8.error||null;
   await signAnexos();
   if(r4.error||r5.error) return {error:r4.error||r5.error};
   return {};
@@ -249,6 +253,7 @@ function renderAll(){
   renderPecas(); renderLines(); renderAulas(); renderAnexos(); renderProcs(); renderSim();
   if(el('tab-rel').classList.contains('active')){ renderDash(); renderRel(); }
   if(el('tab-cal').classList.contains('active')) renderCal();
+  if(el('tab-estoque').classList.contains('active')) renderEstoque();
   if(!el('pmodal').hidden && curPeca && corpoById(curPeca)) fillPecaCalc();
 }
 function fillLists(){
@@ -893,8 +898,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(c
 
 // ================= HISTÓRICO =================
 let hist=[], histFim=true;
-const ENT={cadaver_agenda:'a aula programada de',cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
-const LBL={hora_inicio:'Início',procedimentos_previstos:'Tipos de prática previstos',hora_fim:'Término',alunos_previstos:'Alunos previstos',pecas_previstas:'Peças previstas',status:'Situação',nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
+const ENT={cadaver_estoque:'o item de estoque',cadaver_agenda:'a aula programada de',cadaver_corpos:'a peça',cadaver_procedimentos:'o tipo de aula',cadaver_sessoes:'o dia de aula',cadaver_aulas:'o uso de peça',cadaver_anexos:'o anexo',cadaver_unidades:'a unidade'};
+const LBL={estoque_minimo:'Estoque mínimo',quantidade_atual:'Quantidade atual',valor_unitario:'Valor unitário',link_referencia:'Link de referência',unidade_medida:'Unidade de medida',hora_inicio:'Início',procedimentos_previstos:'Tipos de prática previstos',hora_fim:'Término',alunos_previstos:'Alunos previstos',pecas_previstas:'Peças previstas',status:'Situação',nps_aberto_ate:'Avaliação aberta até',segmento:'Segmento',codigo_final:'Código final',especime:'Espécimen',local_atual:'Local atual',processamento:'Processamento',invoice:'Invoice',fornecedor:'Fornecedor',
   sexo:'Sexo',idade:'Idade',etnia:'Etnia',data_aquisicao:'Data de chegada',valor:'Valor de compra',uso_inicial:'Uso prévio (%)',link_drive:'Link do Drive',
   pct_por_aluno:'% por aluno',desgaste_ideal:'Desgaste ideal (%)',descricao:'Descrição',data:'Data',curso:'Curso',responsavel:'Responsável',observacao:'Observações',
   total_alunos:'Alunos na aula',num_alunos:'Alunos na peça',corpo_id:'Peça',procedimento_id:'Tipo de aula',titulo:'Título',categoria:'Categoria',sessao_id:'Dia de aula'};
@@ -921,6 +926,7 @@ function nomeReg(h){
     case 'cadaver_sessoes': return fmtFull(r.data)+(r.curso?' · '+r.curso:'');
     case 'cadaver_aulas': { const c=corpoById(r.corpo_id); return (c?cod(c):'peça excluída')+' em '+fmtFull(r.data); }
     case 'cadaver_anexos': return r.titulo||'—';
+    case 'cadaver_estoque': return r.nome;
     case 'cadaver_agenda': return fmtFull(r.data)+(r.curso?' · '+r.curso:'');
   }
   return '—';
@@ -1200,6 +1206,240 @@ async function qrImagem(url,px){
 }
 function quebraTexto(ctx,txt,max){const ws=txt.split(' '),ls=[];let l='';ws.forEach(w=>{const t=l?l+' '+w:w;if(ctx.measureText(t).width>max&&l){ls.push(l);l=w;}else l=t;});if(l)ls.push(l);return ls;}
 // Monta um PDF de uma página com a imagem JPEG do cartaz e um link clicável sobre o QR e o endereço
+// ================= ESTOQUE (insumos da unidade) =================
+let estoque=[], estoqueErr=null, estFiltro='', estSoRepor=false, estEdit=null;
+const TIPOS_INSUMO=['EPI','Instrumental cirúrgico','Material de dissecção','Fios e suturas','Químicos e conservação','Limpeza e descarte','Material de escritório','Outros'];
+const UNIDS=['un','caixa','pacote','par','rolo','frasco','galão','L','mL','kg','g','m'];
+const qtd=v=>NUM.format(Number(v)||0);
+const estById=id=>estoque.find(x=>x.id===id);
+const faltaDe=e=>Math.max(Number(e.estoque_minimo||0)-Number(e.quantidade_atual||0),0);
+function estStatus(e){const a=Number(e.quantidade_atual||0),m=Number(e.estoque_minimo||0);
+  if(a<=0) return ['hot','Sem estoque']; if(a<m) return ['hot','Repor']; if(m>0&&a===m) return ['mid','No mínimo']; return ['ok','OK'];}
+function renderEstoque(){
+  if(!cur) return;
+  const w=el('w-estoque');
+  if(estoqueErr){w.innerHTML=`<div class="warnbox">${esc(errMsg(estoqueErr))}</div>`;el('est-resumo').innerHTML='';return;}
+  el('dl-tipo-insumo').innerHTML=sortPt([...TIPOS_INSUMO,...estoque.map(e=>e.tipo)]).map(v=>`<option value="${esc(v)}"></option>`).join('');
+  el('dl-unid-med').innerHTML=sortPt([...UNIDS,...estoque.map(e=>e.unidade_medida)]).map(v=>`<option value="${esc(v)}"></option>`).join('');
+  const repor=estoque.filter(e=>faltaDe(e)>0||Number(e.quantidade_atual)<=0);
+  const total=estoque.reduce((t,e)=>t+Number(e.quantidade_atual||0)*Number(e.valor_unitario||0),0);
+  const custoRepor=estoque.reduce((t,e)=>t+faltaDe(e)*Number(e.valor_unitario||0),0);
+  const tipos=sortPt(estoque.map(e=>e.tipo||'Sem tipo'));
+  el('est-resumo').innerHTML=estoque.length?`<span class="chip"><b>${estoque.length}</b> itens</span><button class="chip ${estSoRepor?'on':''}" onclick="estSoRepor=!estSoRepor;renderEstoque()"><b>${repor.length}</b> abaixo do mínimo</button><span class="chip"><b>${money(total)}</b> em estoque</span><span class="chip"><b>${money(custoRepor)}</b> para repor o mínimo</span>`+
+    `<select id="est-tipo" class="chip-sel" aria-label="Filtrar por tipo" onchange="estFiltro=this.value;renderEstoque()"><option value="">Todos os tipos</option>${tipos.map(t=>`<option ${t===estFiltro?'selected':''}>${esc(t)}</option>`).join('')}</select>`:'';
+  const q=(el('est-busca').value||'').trim().toLowerCase();
+  const list=[...estoque].filter(e=>(!estFiltro||(e.tipo||'Sem tipo')===estFiltro)&&(!estSoRepor||faltaDe(e)>0||Number(e.quantidade_atual)<=0)&&(!q||[e.nome,e.tipo,e.observacao].some(v=>(v||'').toLowerCase().includes(q))))
+    .sort((a,b)=>(a.tipo||'~').localeCompare(b.tipo||'~','pt-BR')||a.nome.localeCompare(b.nome,'pt-BR'));
+  if(!estoque.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhum insumo cadastrado nesta unidade</b>Cadastre o primeiro item no formulário acima: tipo, estoque mínimo, quantidade atual e valor unitário.</div></div>';return;}
+  if(!list.length){w.innerHTML='<div class="tablewrap"><div class="empty"><b>Nenhum item encontrado</b>Ajuste a busca ou os filtros.</div></div>';return;}
+  w.innerHTML='<div class="tablewrap"><table class="est"><thead><tr><th>Item</th><th>Tipo</th><th class="n">Mínimo</th><th class="n">Atual</th><th>Situação</th><th class="n">Valor unit.</th><th class="n">Valor em estoque</th><th>Referência</th><th></th></tr></thead><tbody>'+
+    list.map(e=>{const [c,l]=estStatus(e),f=faltaDe(e),um=esc(e.unidade_medida||'un');
+      return `<tr>
+        <td><input value="${esc(e.nome)}" aria-label="Item" onchange="saveEst('${e.id}','nome',this.value)">${e.observacao?`<span class="sub">${esc(e.observacao)}</span>`:''}</td>
+        <td><input list="dl-tipo-insumo" value="${esc(e.tipo||'')}" aria-label="Tipo" onchange="saveEst('${e.id}','tipo',this.value)"></td>
+        <td class="n"><span class="qcell"><input class="w-int num" type="number" min="0" step="1" value="${Number(e.estoque_minimo)}" aria-label="Estoque mínimo" onchange="saveEst('${e.id}','estoque_minimo',this.value)"><em>${um}</em></span></td>
+        <td class="n"><span class="qcell"><button class="qb ed-only" title="Tirar 1" onclick="ajEst('${e.id}',-1)">−</button><input class="w-int num" type="number" min="0" step="1" value="${Number(e.quantidade_atual)}" aria-label="Quantidade atual" onchange="saveEst('${e.id}','quantidade_atual',this.value)"><button class="qb ed-only" title="Somar 1" onclick="ajEst('${e.id}',1)">+</button><em>${um}</em></span></td>
+        <td><span class="pill ${c}">${l}</span>${f>0?`<span class="sub">faltam ${qtd(f)} ${um}</span>`:''}</td>
+        <td class="n"><input class="w-val num" type="number" min="0" step="0.01" value="${Number(e.valor_unitario)}" aria-label="Valor unitário" onchange="saveEst('${e.id}','valor_unitario',this.value)"></td>
+        <td class="n">${money(Number(e.quantidade_atual||0)*Number(e.valor_unitario||0))}</td>
+        <td>${e.link_referencia?`<a class="drive" href="${esc(safeUrl(e.link_referencia))}" target="_blank" rel="noopener">Abrir ↗</a>`:'<span class="muted">—</span>'}<button class="linkbtn ed-only" style="font-size:12px" onclick="editLinkEst('${e.id}')">${e.link_referencia?'trocar':'+ link'}</button></td>
+        <td><button class="icon" title="Excluir item" onclick="delEst('${e.id}')">${TRASH}</button></td>
+      </tr>`;}).join('')+'</tbody></table></div>';
+}
+async function addEst(){
+  if(somenteLeitura()) return;
+  const nome=el('ne-nome').value.trim(); if(!nome){toast('Informe o nome do item.',true);el('ne-nome').focus();return;}
+  const n=id=>{const v=el(id).value;return v===''?0:Math.max(0,Number(v));};
+  const row={unidade_id:cur.id,nome,tipo:el('ne-tipo').value.trim()||null,unidade_medida:el('ne-um').value.trim()||'un',
+    estoque_minimo:n('ne-min'),quantidade_atual:n('ne-atual'),valor_unitario:n('ne-valor'),
+    link_referencia:el('ne-link').value.trim()?safeUrl(el('ne-link').value):null};
+  const {data,error}=await db.from('cadaver_estoque').insert(row).select().single();
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  estoque.push(data); ['ne-nome','ne-min','ne-atual','ne-valor','ne-link'].forEach(i=>el(i).value=''); el('ne-um').value='un';
+  renderEstoque(); toast('Item cadastrado.'); el('ne-nome').focus();
+}
+async function saveEst(id,field,val){
+  if(somenteLeitura()) return;
+  const e=estById(id); if(!e) return;
+  if(['estoque_minimo','quantidade_atual','valor_unitario'].includes(field)){val=Number(val);if(!(val>=0)){toast('Use um número igual ou maior que zero.',true);renderEstoque();return;}}
+  else{val=(val||'').trim()||null; if(field==='nome'&&!val){toast('O item precisa de um nome.',true);renderEstoque();return;}}
+  const {error}=await db.from('cadaver_estoque').update({[field]:val}).eq('id',id);
+  if(error){toast('Erro ao salvar: '+errMsg(error),true);renderEstoque();return;}
+  e[field]=val; renderEstoque(); toast('Salvo.');
+}
+function ajEst(id,d){const e=estById(id);if(!e)return;const v=Math.max(0,Number(e.quantidade_atual||0)+d);saveEst(id,'quantidade_atual',v);}
+async function editLinkEst(id){
+  if(somenteLeitura()) return;
+  const e=estById(id); if(!e) return;
+  const ok=await askTexto('Link de referência de “'+e.nome+'”','Cole o endereço da página do produto (loja ou fornecedor). Deixe vazio para remover.',e.link_referencia||'');
+  if(ok===null) return;
+  saveEst(id,'link_referencia',ok?safeUrl(ok):'');
+}
+function askTexto(title,body,valor){
+  return new Promise(res=>{
+    const m=el('modal'), inp=el('m-input'), okb=el('m-ok');
+    el('m-title').textContent=title; el('m-body').textContent=body; okb.textContent='Salvar'; okb.disabled=false;
+    const lab=el('m-type').querySelector('label'), orig=lab.innerHTML; lab.textContent='Endereço';
+    el('m-type').hidden=false;
+    inp.value=valor; inp.oninput=null; m.hidden=false; setTimeout(()=>inp.select(),30);
+    const fim=v=>{m.hidden=true;lab.innerHTML=orig;el('m-type').hidden=true;document.removeEventListener('keydown',key,true);res(v);};
+    const key=ev=>{if(ev.key==='Escape'){ev.stopPropagation();fim(null);}if(ev.key==='Enter'&&document.activeElement===inp){ev.preventDefault();fim(inp.value.trim());}};
+    document.addEventListener('keydown',key,true);
+    okb.onclick=()=>fim(inp.value.trim()); el('m-cancel').onclick=()=>fim(null); m.onclick=ev=>{if(ev.target===m)fim(null);};
+  });
+}
+async function delEst(id){
+  if(somenteLeitura()) return;
+  const e=estById(id); if(!e) return;
+  const ok=await ask({title:'Excluir “'+e.nome+'” do estoque?',body:'O item sai da lista desta unidade. O registro fica no Histórico.'});
+  if(!ok) return;
+  const {error}=await db.from('cadaver_estoque').delete().eq('id',id);
+  if(error){toast('Erro: '+errMsg(error),true);return;}
+  estoque=estoque.filter(x=>x.id!==id); renderEstoque(); toast('Item excluído.');
+}
+
+// ---------- solicitação de compra ----------
+let solSel=new Map();   // id -> quantidade a comprar
+function abrirSolicitacao(){
+  if(!estoque.length){toast('Cadastre itens no estoque primeiro.',true);return;}
+  solSel=new Map(estoque.filter(e=>faltaDe(e)>0||Number(e.quantidade_atual)<=0).map(e=>[e.id,Math.max(faltaDe(e),Number(e.estoque_minimo)>0?faltaDe(e):1)]));
+  el('sol-unid').textContent=cur.nome;
+  el('sol-solic').value=el('sol-solic').value||(usuario&&((usuario.user_metadata&&usuario.user_metadata.nome)||usuario.email))||'';
+  renderSolicitacao(); el('solmodal').hidden=false; document.body.style.overflow='hidden';
+}
+function fecharSolicitacao(){el('solmodal').hidden=true;document.body.style.overflow='';}
+function solToggle(id){if(solSel.has(id))solSel.delete(id);else{const e=estById(id);solSel.set(id,Math.max(faltaDe(e),1));}renderSolicitacao();}
+function solQtd(id,v){v=Number(v);if(v>0)solSel.set(id,v);else solSel.delete(id);renderSolicitacao();}
+function renderSolTotal(){
+  const t=[...solSel].reduce((s,[id,q])=>{const e=estById(id);return s+(e?q*Number(e.valor_unitario||0):0);},0);
+  el('sol-total').innerHTML=`<b>${solSel.size}</b> item(ns) · total estimado <b>${money(t)}</b>`;
+  el('sol-gerar').disabled=!solSel.size;
+}
+function renderSolicitacao(){
+  const list=[...estoque].sort((a,b)=>(solSel.has(b.id)-solSel.has(a.id))||(a.tipo||'~').localeCompare(b.tipo||'~','pt-BR')||a.nome.localeCompare(b.nome,'pt-BR'));
+  el('sol-itens').innerHTML='<table class="est"><thead><tr><th></th><th>Item</th><th class="n">Atual / mínimo</th><th class="n">Comprar</th><th class="n">Valor unit.</th><th class="n">Subtotal</th><th>Referência</th></tr></thead><tbody>'+
+    list.map(e=>{const on=solSel.has(e.id),q=solSel.get(e.id)||0,um=esc(e.unidade_medida||'un'),[c]=estStatus(e);
+      return `<tr class="${on?'sel':''}"><td><input type="checkbox" ${on?'checked':''} aria-label="Incluir ${esc(e.nome)}" onchange="solToggle('${e.id}')"></td>
+        <td><b>${esc(e.nome)}</b><span class="sub">${esc(e.tipo||'Sem tipo')}</span></td>
+        <td class="n"><span class="pill ${c}">${qtd(e.quantidade_atual)} / ${qtd(e.estoque_minimo)} ${um}</span></td>
+        <td class="n"><span class="qcell"><input class="w-int num" type="number" min="0" step="1" value="${on?q:''}" placeholder="0" aria-label="Quantidade a comprar" onchange="solQtd('${e.id}',this.value)"><em>${um}</em></span></td>
+        <td class="n">${money(e.valor_unitario)}</td><td class="n">${on?money(q*Number(e.valor_unitario||0)):'—'}</td>
+        <td>${e.link_referencia?`<a class="drive" href="${esc(safeUrl(e.link_referencia))}" target="_blank" rel="noopener">Abrir ↗</a>`:'<span class="muted">sem link</span>'}</td></tr>`;}).join('')+'</tbody></table>';
+  renderSolTotal();
+}
+// PDF de várias páginas: cada página é uma imagem JPEG + áreas de link clicáveis
+function pdfPaginas(paginas){
+  const enc=new TextEncoder(), parts=[], offs=[]; let len=0, n=3;
+  const push=b=>{const u=typeof b==='string'?enc.encode(b):b;parts.push(u);len+=u.length;};
+  const obj=(i,body)=>{offs[i]=len;push(`${i} 0 obj\n`);body();push('\nendobj\n');};
+  const pw=595.28, ph=841.89;
+  const ids=paginas.map(p=>{const o={page:n++,img:n++,cont:n++,ann:p.links.map(()=>n++)};return o;});
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1,()=>push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>push(`<< /Type /Pages /Kids [${ids.map(o=>o.page+' 0 R').join(' ')}] /Count ${ids.length} >>`));
+  paginas.forEach((p,k)=>{const o=ids[k];
+    obj(o.page,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${o.img} 0 R >> >> /Contents ${o.cont} 0 R${o.ann.length?` /Annots [${o.ann.map(a=>a+' 0 R').join(' ')}]`:''} >>`));
+    obj(o.img,()=>{push(`<< /Type /XObject /Subtype /Image /Width ${p.W} /Height ${p.H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`);push(p.jpeg);push('\nendstream');});
+    const cs=`q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+    obj(o.cont,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    p.links.forEach((l,i)=>{const sx=pw/p.W, sy=ph/p.H; const r=[l.x*sx, ph-(l.y+l.h)*sy, (l.x+l.w)*sx, ph-l.y*sy].map(v=>v.toFixed(2)).join(' ');
+      const uri=l.url.replace(/[^\x21-\x7E]/g,c=>encodeURIComponent(c)).replace(/[()\\]/g,m=>'\\'+m);
+      obj(o.ann[i],()=>push(`<< /Type /Annot /Subtype /Link /Rect [${r}] /Border [0 0 0] /A << /S /URI /URI (${uri}) >> >>`));});
+  });
+  const xref=len;
+  push(`xref\n0 ${n}\n0000000000 65535 f \n`);
+  for(let i=1;i<n;i++) push(String(offs[i]).padStart(10,'0')+' 00000 n \n');
+  push(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts,{type:'application/pdf'});
+}
+function canvasJpeg(cv){const bin=atob(cv.toDataURL('image/jpeg',0.92).split(',')[1]),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
+function cortaTexto(x,t,max){if(x.measureText(t).width<=max)return t;while(t.length>1&&x.measureText(t+'…').width>max)t=t.slice(0,-1);return t+'…';}
+async function gerarSolicitacaoPDF(){
+  if(!solSel.size) return;
+  const btn=el('sol-gerar'); btn.disabled=true; btn.textContent='Gerando PDF…';
+  try{
+    try{await document.fonts.ready;}catch(e){}
+    const W=1654,H=2339,k=W/210, ML=14*k, MR=W-14*k, TOP_LIM=H-26*k;
+    const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const F=css('--f-display')||'sans-serif', B=css('--f-body')||'sans-serif';
+    const TEAL='#0f3e3c', GREEN='#3d8b48', MUTED='#5a6f6c', LINE='#d5e0dc', BG='#f2f6f5';
+    const [li,ld]=await Promise.all([carregarImg('logo-itc.png'),carregarImg('logo-idomed.png')]);
+    const itens=[...solSel].map(([id,q])=>({e:estById(id),q})).filter(x=>x.e).sort((a,b)=>(a.e.tipo||'~').localeCompare(b.e.tipo||'~','pt-BR')||a.e.nome.localeCompare(b.e.nome,'pt-BR'));
+    const total=itens.reduce((t,x)=>t+x.q*Number(x.e.valor_unitario||0),0);
+    const hoje=new Date(), numero='SC-'+hoje.toLocaleDateString('sv').replace(/-/g,'')+'-'+String(hoje.getHours()).padStart(2,'0')+String(hoje.getMinutes()).padStart(2,'0');
+    const solic=el('sol-solic').value.trim(), obs=el('sol-obs').value.trim();
+    // colunas (mm a partir da margem esquerda)
+    const C=[['#',7,'l'],['Item',59,'l'],['Quantidade',24,'r'],['Valor unit.',24,'r'],['Subtotal',26,'r'],['Link de referência',42,'l']];
+    let xs=[ML]; C.forEach(c=>xs.push(xs[xs.length-1]+c[1]*k));
+    const paginas=[]; let cv,x,y,links;
+    const novaPagina=(primeira,comCabecalho=true)=>{
+      cv=document.createElement('canvas'); cv.width=W; cv.height=H; x=cv.getContext('2d'); links=[];
+      x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+      const hI=(primeira?17:11)*k, wI=li?li.width*hI/li.height:0, hD=(primeira?11:7)*k, wD=ld?ld.width*hD/ld.height:0;
+      if(li) x.drawImage(li,ML,12*k,wI,hI);
+      x.fillStyle=LINE; x.fillRect(ML+wI+5*k,12*k+2*k,2,hI-4*k);
+      if(ld) x.drawImage(ld,ML+wI+10*k,12*k+(hI-hD)/2,wD,hD);
+      x.textAlign='right'; x.fillStyle=TEAL; x.font=`800 ${(primeira?8:5.5)*k}px ${F}`; x.fillText('Solicitação de compra',MR,12*k+(primeira?8:6)*k);
+      x.fillStyle=MUTED; x.font=`500 ${3.6*k}px ${B}`; x.fillText(numero+' · '+hoje.toLocaleDateString('pt-BR'),MR,12*k+(primeira?14:11)*k);
+      y=12*k+hI+7*k;
+      x.fillStyle=GREEN; x.fillRect(ML,y-3*k,MR-ML,0.8*k);
+      if(primeira){
+        const info=[['Unidade',cur.nome],['Solicitante',solic||'—'],['Data',hoje.toLocaleDateString('pt-BR')],['Itens',String(itens.length)],['Total estimado',money(total)]];
+        const pesos=[1.35,1.55,0.8,0.55,1], soma=pesos.reduce((s,v)=>s+v,0); let cx=ML; x.textAlign='left';
+        info.forEach(([l,v],i)=>{const cw=(MR-ML)*pesos[i]/soma;x.fillStyle=MUTED;x.font=`600 ${3*k}px ${B}`;x.fillText(l.toUpperCase(),cx,y+4*k);x.fillStyle=TEAL;x.font=`700 ${4.4*k}px ${F}`;x.fillText(cortaTexto(x,v,cw-4*k),cx,y+11*k);cx+=cw;});
+        y+=20*k;
+      }
+      if(comCabecalho) cabecalho();
+    };
+    const cabecalho=()=>{x.fillStyle=BG;x.fillRect(ML,y,MR-ML,9*k);x.fillStyle=MUTED;x.font=`700 ${3.1*k}px ${B}`;
+      C.forEach((c,i)=>{x.textAlign=c[2]==='r'?'right':'left';x.fillText(c[0].toUpperCase(),c[2]==='r'?xs[i+1]-2*k:xs[i]+2*k,y+6*k);});y+=9*k;};
+    const fecharPagina=()=>paginas.push({cv,links});
+    novaPagina(true);
+    itens.forEach((it,i)=>{
+      const e=it.e; x.font=`600 ${3.9*k}px ${B}`;
+      let linhas=quebraTexto(x,e.nome,C[1][1]*k-4*k); if(linhas.length>2) linhas=[linhas[0],cortaTexto(x,linhas.slice(1).join(' '),C[1][1]*k-4*k)];
+      const rh=(linhas.length*5.2+6.5)*k;
+      if(y+rh>TOP_LIM){fecharPagina();novaPagina(false);}
+      if(i%2){x.fillStyle='#fafcfb';x.fillRect(ML,y,MR-ML,rh);}
+      x.textAlign='left'; x.fillStyle=MUTED; x.font=`500 ${3.6*k}px ${B}`; x.fillText(String(i+1),xs[0]+2*k,y+6*k);
+      x.fillStyle='#10292a'; x.font=`600 ${3.9*k}px ${B}`; linhas.forEach((l,j)=>x.fillText(l,xs[1]+2*k,y+6*k+j*5.2*k));
+      x.fillStyle=MUTED; x.font=`400 ${3.2*k}px ${B}`; x.fillText(cortaTexto(x,e.tipo||'Sem tipo',C[1][1]*k-4*k),xs[1]+2*k,y+6*k+linhas.length*5.2*k);
+      x.textAlign='right'; x.fillStyle='#10292a'; x.font=`700 ${3.9*k}px ${B}`; x.fillText(qtd(it.q)+' '+(e.unidade_medida||'un'),xs[3]-2*k,y+6*k);
+      x.font=`400 ${3.7*k}px ${B}`; x.fillText(money(e.valor_unitario),xs[4]-2*k,y+6*k);
+      x.font=`600 ${3.7*k}px ${B}`; x.fillText(money(it.q*Number(e.valor_unitario||0)),xs[5]-2*k,y+6*k);
+      x.textAlign='left';
+      if(e.link_referencia){const url=safeUrl(e.link_referencia);let dom=url;try{dom=new URL(url).hostname.replace(/^www\./,'');}catch(_){}
+        x.fillStyle=GREEN; x.font=`600 ${3.5*k}px ${B}`; const t=cortaTexto(x,dom,C[5][1]*k-4*k); x.fillText(t,xs[5]+2*k,y+6*k);
+        x.fillStyle=MUTED; x.font=`400 ${2.9*k}px ${B}`; x.fillText('clique para abrir',xs[5]+2*k,y+10.5*k);
+        links.push({x:xs[5],y:y+1*k,w:C[5][1]*k,h:rh-2*k,url});}
+      else{x.fillStyle=MUTED;x.font=`400 ${3.4*k}px ${B}`;x.fillText('—',xs[5]+2*k,y+6*k);}
+      y+=rh; x.fillStyle=LINE; x.fillRect(ML,y,MR-ML,2);
+    });
+    // total, observações e assinaturas
+    const obsL=obs?(x.font=`400 ${3.7*k}px ${B}`,quebraTexto(x,obs,MR-ML)):[];
+    const resto=14*k+(obsL.length?(9+obsL.length*5.2)*k:0)+30*k;
+    if(y+resto>TOP_LIM){fecharPagina();novaPagina(false,false);}
+    y+=4*k; x.fillStyle=TEAL; x.fillRect(xs[2],y,xs[5]-xs[2],10*k);
+    x.fillStyle='#fff'; x.textAlign='left'; x.font=`600 ${3.6*k}px ${B}`; x.fillText('TOTAL ESTIMADO',xs[2]+3*k,y+6.6*k);
+    x.textAlign='right'; x.font=`800 ${4.6*k}px ${F}`; x.fillText(money(total),xs[5]-2*k,y+7*k); y+=16*k;
+    x.textAlign='left';
+    if(obsL.length){x.fillStyle=MUTED;x.font=`700 ${3.1*k}px ${B}`;x.fillText('OBSERVAÇÕES',ML,y);y+=5.5*k;x.fillStyle='#10292a';x.font=`400 ${3.7*k}px ${B}`;obsL.forEach(l=>{x.fillText(l,ML,y);y+=5.2*k;});y+=4*k;}
+    y+=14*k; const half=(MR-ML-12*k)/2;
+    [['Solicitado por',ML],['Aprovado por',ML+half+12*k]].forEach(([t,sx])=>{x.fillStyle='#10292a';x.fillRect(sx,y,half,2);x.fillStyle=MUTED;x.font=`500 ${3.3*k}px ${B}`;x.fillText(t+(t==='Solicitado por'&&solic?' · '+solic:''),sx,y+5*k);});
+    fecharPagina();
+    // rodapé com número de página
+    const N=paginas.length;
+    paginas.forEach((p,i)=>{const c=p.cv.getContext('2d');c.fillStyle=LINE;c.fillRect(ML,H-16*k,MR-ML,2);c.fillStyle=MUTED;c.font=`400 ${3.2*k}px ${B}`;
+      c.textAlign='left';c.fillText('Central de Controle Anatômico · ITC × IDOMED · '+cur.nome,ML,H-10*k);c.textAlign='right';c.fillText('Página '+(i+1)+' de '+N,MR,H-10*k);});
+    const blob=pdfPaginas(paginas.map(p=>({jpeg:canvasJpeg(p.cv),W,H,links:p.links})));
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='solicitacao-compra-'+slug(cur.nome)+'-'+today()+'.pdf';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('PDF da solicitação baixado.');
+  }catch(err){ console.error(err); toast('Não foi possível gerar o PDF: '+err.message,true); }
+  finally{ btn.disabled=!solSel.size; btn.textContent='Gerar PDF'; }
+}
+
+
 function pdfDeJpeg(jpeg,W,H,links){
   const enc=new TextEncoder(), parts=[], offs=[]; let len=0;
   const push=b=>{const u=typeof b==='string'?enc.encode(b):b;parts.push(u);len+=u.length;};
@@ -1417,7 +1657,7 @@ function exportRespostas(){
 
 // ================= PERMISSÕES (somente visualização) e BACKUP =================
 let podeEditar=true;
-const LIVRES=new Set(['pc-busca','u-switch','q-url','ag-busca','m-input']);
+const LIVRES=new Set(['pc-busca','u-switch','q-url','ag-busca','m-input','est-busca','est-tipo']);
 let travaPend=false;
 function travar(){
   travaPend=false; if(podeEditar) return;
@@ -1446,7 +1686,7 @@ async function verPermissao(){
 function somenteLeitura(){ if(podeEditar) return false; toast('Seu acesso é somente de visualização.',true); return true; }
 
 const BK=[['cadaver_unidades','Unidades'],['cadaver_corpos','Peças'],['cadaver_procedimentos','Tipos de aula'],['cadaver_sessoes','Dias de aula'],
-  ['cadaver_aulas','Usos de peças'],['cadaver_agenda','Calendário'],['cadaver_anexos','Anexos'],['cadaver_nps_respostas','Avaliações'],['cadaver_historico','Histórico']];
+  ['cadaver_aulas','Usos de peças'],['cadaver_estoque','Estoque'],['cadaver_agenda','Calendário'],['cadaver_anexos','Anexos'],['cadaver_nps_respostas','Avaliações'],['cadaver_historico','Histórico']];
 function carregarScript(src){return new Promise((res,rej)=>{if(window.XLSX)return res();const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('não foi possível carregar o gerador de planilhas'));document.head.appendChild(s);});}
 async function lerTudo(t){
   const out=[]; for(let i=0;;i+=1000){
